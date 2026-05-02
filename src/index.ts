@@ -9,9 +9,11 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import waterVertex from "./shaders/water.vertex.fx";
+import waterFragment from "./shaders/water.fragment.fx";
+
 import { Effect } from "@babylonjs/core/Materials/effect";
 
-// REQUIRED for ShaderMaterial internals
 import "@babylonjs/core/Materials/standardMaterial";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
@@ -19,9 +21,6 @@ const engine = new Engine(canvas, true);
 
 const scene = new Scene(engine);
 
-// -----------------------------
-// Camera
-// -----------------------------
 const camera = new ArcRotateCamera(
     "cam",
     Math.PI / 2,
@@ -33,9 +32,6 @@ const camera = new ArcRotateCamera(
 
 camera.attachControl(canvas, true);
 
-// -----------------------------
-// Light
-// -----------------------------
 new HemisphericLight("light", new Vector3(0, 1, 0), scene);
 
 // -----------------------------
@@ -52,52 +48,10 @@ const water = MeshBuilder.CreateGround(
 );
 
 // -----------------------------
-// Shader code (embedded)
-// -----------------------------
-const vertexShader = `
-precision highp float;
-
-attribute vec3 position;
-uniform mat4 worldViewProjection;
-uniform float time;
-
-varying float vHeight;
-
-void main() {
-  vec3 p = position;
-
-  float wave =
-      sin(p.x * 0.2 + time) * 0.5 +
-      sin(p.z * 0.3 + time * 1.2) * 0.3 +
-      sin((p.x + p.z) * 0.1 + time * 0.8) * 0.2;
-
-  p.y = wave;
-  vHeight = wave;
-
-  gl_Position = worldViewProjection * vec4(p, 1.0);
-}
-`;
-
-const fragmentShader = `
-precision highp float;
-
-varying float vHeight;
-
-void main() {
-  vec3 deep = vec3(0.0, 0.2, 0.5);
-  vec3 shallow = vec3(0.2, 0.5, 0.8);
-
-  float t = vHeight * 0.5 + 0.5;
-
-  gl_FragColor = vec4(mix(deep, shallow, t), 1.0);
-}
-`;
-
-// -----------------------------
 // Register shaders (IMPORTANT)
 // -----------------------------
-Effect.ShadersStore["waterVertexShader"] = vertexShader;
-Effect.ShadersStore["waterFragmentShader"] = fragmentShader;
+Effect.ShadersStore["waterVertexShader"] = waterVertex;
+Effect.ShadersStore["waterFragmentShader"] = waterFragment;
 
 // -----------------------------
 // Shader material
