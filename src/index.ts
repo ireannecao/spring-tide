@@ -20,6 +20,8 @@ import { Effect } from "@babylonjs/core/Materials/effect";
 import { SpriteManager } from "@babylonjs/core/Sprites/spriteManager";
 import { Sprite } from "@babylonjs/core/Sprites/sprite";
 
+import { generatePhillipsSpectrum } from "./ocean/phillips_spectrum";
+
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Culling/ray";
 import * as GUI from "@babylonjs/gui/2D";
@@ -133,7 +135,14 @@ waterShader.setFloat("maxWaves", MAX_WAVES);
 
 const N = 64;
 
-const displacementData = new Float32Array(N * N * 4); // all zeroes
+const displacementData = generatePhillipsSpectrum({
+    N,
+    L: 50,           // real world size of a single tile, so we want this to be the same as mesh width/height
+    windSpeed: 12,   // in m/s
+    windDirX: 1.0,
+    windDirZ: 0.0,
+    amplitude: 0.5,
+});
 
 const displacementTexture = new RawTexture(
     displacementData,
