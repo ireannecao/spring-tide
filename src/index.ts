@@ -22,6 +22,9 @@ import { Sprite } from "@babylonjs/core/Sprites/sprite";
 
 import { generatePhillipsSpectrum } from "./ocean/PhillipsSpectrum";
 import { OceanFFT } from "./ocean/OceanFFT";
+import { ButterflyPass } from "./ocean/ButterflyPass";
+
+(window as any).Effect_Index = Effect;
 
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Culling/ray";
@@ -60,6 +63,7 @@ const water = MeshBuilder.CreateGround(
     },
     scene
 );
+water.alwaysSelectAsActiveMesh = true;
 
 // -----------------------------
 // Register shaders (IMPORTANT)
@@ -82,11 +86,12 @@ const waterShader = new ShaderMaterial(
         uniforms: [
             "worldViewProjection",
             "time",
-            "clickPos",
-            "waveTime",
+            "waveSpeed",
+            "waveFrequency",
+            "waveAmplitude",
+            "decayRate",
             "maxAge",
-            "speed",
-            "padding"
+            "maxWaves",
         ],
         samplers: ["waveTexture", "displacementMap"]
     }
@@ -146,7 +151,7 @@ const displacementData = generatePhillipsSpectrum({
     windSpeed: 12,   // in m/s
     windDirX: 1.0,
     windDirZ: 0.0,
-    amplitude: 0.5,
+    amplitude: 40.0,
 });
 
 // const displacementTexture = new RawTexture(
@@ -173,9 +178,12 @@ const h0Texture = new RawTexture(
     Engine.TEXTURETYPE_FLOAT
 );
 
-const oceanFFT = new OceanFFT(scene, h0Texture, N, 50);
-// waterShader.setTexture("displacementMap", h0Texture);
-waterShader.setTexture("displacementMap", oceanFFT.displacementTexture);
+const oceanFFT = new OceanFFT(scene, h0Texture, N, 50, /* autoRun= */ false);
+const butterflyPass = new ButterflyPass(scene, oceanFFT.displacementTexture, N, /* autoRun= */ false);
+
+
+// waterShader.setTexture("displacementMap", oceanFFT.displacementTexture);
+waterShader.setTexture("displacementMap", butterflyPass.displacementTexture);
 
 
 // -----------------------------
@@ -183,26 +191,51 @@ waterShader.setTexture("displacementMap", oceanFFT.displacementTexture);
 // -----------------------------
 const start = performance.now();
 
-scene.registerBeforeRender(() => {
+scene.onBeforeRenderObservable.add(() => {
     const time = (performance.now() - start) * 0.001;
-    waterShader.setFloat("time", time);
-    oceanFFT.update(time);
 
+    // 1. Advance time state
+    waterShader.setTexture("displacementMap", null as any);
+
+    // 2. Run GPU passes in strict dependency order
+    oceanFFT.update(time);   // sets _time uniform value
+    oceanFFT.runPass();      // renders h(k,t) into hkt RTT
+
+    butterflyPass.runPass(); // reads hkt RTT → IFFT → displacement RTT
+
+    waterShader.setFloat("time", time);
+    waterShader.setTexture("displacementMap", butterflyPass.displacementTexture);
+
+    // 3. Animate penguins (CPU-only, order doesn't matter)
     penguinManager.sprites.forEach((p) => {
-        // add back in if we want it to move with created touch wave
-        // const age = time - lastClickTime;
-        // const speed = 6.0;
-        // const thickness = 5.0;
-        // const waveFront = age * speed;
         const wave =
             Math.sin(p.position.x * 0.2 + time) * 0.5 +
             Math.sin(p.position.z * 0.3 + time * 1.2) * 0.3;
-
         p.position.y = wave;
         p.angle = Math.cos(p.position.x * 0.5 + time) * 0.2;
-
     });
 });
+
+// scene.registerBeforeRender(() => {
+//     const time = (performance.now() - start) * 0.001;
+//     waterShader.setFloat("time", time);
+//     oceanFFT.update(time);
+
+//     penguinManager.sprites.forEach((p) => {
+//         // add back in if we want it to move with created touch wave
+//         // const age = time - lastClickTime;
+//         // const speed = 6.0;
+//         // const thickness = 5.0;
+//         // const waveFront = age * speed;
+//         const wave =
+//             Math.sin(p.position.x * 0.2 + time) * 0.5 +
+//             Math.sin(p.position.z * 0.3 + time * 1.2) * 0.3;
+
+//         p.position.y = wave;
+//         p.angle = Math.cos(p.position.x * 0.5 + time) * 0.2;
+
+//     });
+// });
 
 //------------------------------
 // Penguins

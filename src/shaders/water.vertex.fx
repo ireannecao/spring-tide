@@ -1,8 +1,3 @@
-/**
- * Calculates the vertical displacement (y coord) for each vertex in the ocean grid 
- * handles click interaction ripples
-*/
-
 precision highp float;
 
 attribute vec3 position;
@@ -11,10 +6,7 @@ attribute vec2 uv;
 uniform mat4 worldViewProjection;
 uniform float time;
 
-// FFT ocean displacement
 uniform sampler2D displacementMap;
-
-// Click ripple wave data
 uniform sampler2D waveTexture;
 const int MAX_WAVES = 32;
 
@@ -26,12 +18,13 @@ uniform float maxAge;
 
 const float TWO_PI = 6.28318530718;
 
+// BUG 3 FIX: use texture() not texture2D() in WebGL2/GLSL300
 float getWaveTime(float i) {
-    return texture2D(waveTexture, vec2((i + 0.5) / float(MAX_WAVES), 0.5)).a;
+    return texture(waveTexture, vec2((i + 0.5) / float(MAX_WAVES), 0.5)).a;
 }
 
 vec3 getWavePos(float i) {
-    return texture2D(waveTexture, vec2((i + 0.5) / float(MAX_WAVES), 0.5)).rgb;
+    return texture(waveTexture, vec2((i + 0.5) / float(MAX_WAVES), 0.5)).rgb;
 }
 
 varying float vHeight;
@@ -39,12 +32,11 @@ varying float vHeight;
 void main() {
     vec3 p = position;
 
-    // sample the FFT texture using the red channel (read component of wave wave height)
-    float fftDisplacement = texture2D(displacementMap, uv).r;
+    // BUG 3 FIX: texture() + scale for debug visibility
+    float fftDisplacement = texture(displacementMap, uv).r * 50.0;
     p.y = fftDisplacement;
 
     float ripple = 0.0;
-
     for (int i = 0; i < MAX_WAVES; i++) {
         float t = getWaveTime(float(i));
         if (t < 0.0) continue;
@@ -59,7 +51,7 @@ void main() {
         if (dist > maxRadius) continue;
 
         float waveFront = age * waveSpeed;
-        float ringWidth = waveSpeed * 2.0;                      
+        float ringWidth = waveSpeed * 2.0;
         float envelope  = waveAmplitude * exp(-age * decayRate);
 
         float mask = smoothstep(waveFront - ringWidth, waveFront, dist)
