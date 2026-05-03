@@ -72,9 +72,23 @@ const waterShader = new ShaderMaterial(
     },
     {
         attributes: ["position"],
-        uniforms: ["worldViewProjection", "time", "clickPos", "waveTime"],
+        uniforms: [
+            "worldViewProjection",
+            "time",
+            "clickPos",
+            "waveTime",
+            "maxAge",
+            "speed",
+            "padding"
+        ],
     }
 );
+
+waterShader.setFloat("maxAge", 3.0);
+waterShader.setFloat("speed", 6.0);
+waterShader.setFloat("padding", 2.0);
+waterShader.setFloat("waveTime", -1); // explicitly disable
+waterShader.setVector3("clickPos", new Vector3(9999, 9999, 9999));
 
 water.material = waterShader;
 
@@ -141,7 +155,6 @@ createButton("Place Penguin", "penguin");
 createButton("Create Wave", "wave");
 
 let lastClickTime = -999.0;
-let clickPos = new Vector3(0, 0, 0);
 
 scene.onPointerDown = (evt, pickResult) => {
     if (pickResult.hit && pickResult.pickedMesh?.name === "water") {
@@ -177,49 +190,3 @@ engine.runRenderLoop(() => {
 window.addEventListener("resize", () => {
     engine.resize();
 });
-
-// import { Engine } from "@babylonjs/core/Engines/engine";
-// import { Scene } from "@babylonjs/core/scene";
-// import { AppendSceneAsync } from "@babylonjs/core/Loading/sceneLoader";
-// import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
-
-// // Side-effect imports: these register plugins and augment prototypes at load time
-// import "@babylonjs/core/Loading/loadingScreen";
-// import "@babylonjs/core/Helpers/sceneHelpers";
-// import "@babylonjs/core/Materials/standardMaterial";
-// import "@babylonjs/core/Materials/PBR/pbrMaterial";
-// import "@babylonjs/core/Materials/Textures/Loaders/envTextureLoader";
-// import "@babylonjs/loaders/glTF";
-
-// const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-// const engine = new Engine(canvas, true);
-
-// const createScene = async () => {
-//     const scene = new Scene(engine);
-
-//     // Load a glTF model
-//     await AppendSceneAsync("https://assets.babylonjs.com/meshes/boombox.glb", scene);
-
-//     // Create a default camera that frames the loaded model
-//     scene.createDefaultCamera(true, true, true);
-//     // Rotate the camera to face the front of the model
-//     (scene.activeCamera as ArcRotateCamera).alpha += Math.PI;
-
-//     // Create a default environment (skybox + ground + environment lighting)
-//     scene.createDefaultEnvironment({
-//         createGround: true,
-//         createSkybox: true,
-//     });
-
-//     return scene;
-// };
-
-// createScene().then((scene) => {
-//     engine.runRenderLoop(() => {
-//         scene.render();
-//     });
-// });
-
-// window.addEventListener("resize", () => {
-//     engine.resize();
-// });
