@@ -9,6 +9,9 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
+import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
+import { Texture } from "@babylonjs/core/Materials/Textures/texture";
+import { Constants } from "@babylonjs/core/Engines/constants";
 import waterVertex from "./shaders/water.vertex.fx";
 import waterFragment from "./shaders/water.fragment.fx";
 
@@ -81,16 +84,48 @@ const waterShader = new ShaderMaterial(
             "speed",
             "padding"
         ],
+        samplers: ["waveTexture"]
     }
 );
 
 waterShader.setFloat("maxAge", 3.0);
 waterShader.setFloat("speed", 6.0);
 waterShader.setFloat("padding", 2.0);
-waterShader.setFloat("waveTime", -1); // explicitly disable
-waterShader.setVector3("clickPos", new Vector3(9999, 9999, 9999));
+// waterShader.setFloat("waveTime", -1); // explicitly disable
+// waterShader.setVector3("clickPos", new Vector3(9999, 9999, 9999));
 
 water.material = waterShader;
+
+const MAX_WAVES = 32;
+
+const waveData = new Float32Array(MAX_WAVES * 4);
+for (let i = 0; i < MAX_WAVES; i++) {
+    // waveData[i * 4 + 0] = 0.0;   // x (doesn't matter yet)
+    // waveData[i * 4 + 1] = 0.0;   // y
+    // waveData[i * 4 + 2] = 0.0;   // z
+    waveData[i * 4 + 3] = -1.0;  // time = INVALID
+}
+
+const waveTexture = new RawTexture(
+    waveData,
+    MAX_WAVES,
+    1,
+    Constants.TEXTUREFORMAT_RGBA,
+    scene,
+    false,
+    false,
+    Texture.NEAREST_SAMPLINGMODE,
+    Engine.TEXTURETYPE_FLOAT
+);
+
+let nextWaveIndex = 0;
+
+waterShader.setTexture("waveTexture", waveTexture);
+waterShader.setFloat("maxWaves", MAX_WAVES);
+
+// waterShader.getEffect().onCompileObservable.add(() => {
+//     console.log("Shader compiled successfully");
+// });
 
 // -----------------------------
 // Animation
@@ -154,7 +189,8 @@ const createButton = (text: string, mode: "penguin" | "wave") => {
 createButton("Place Penguin", "penguin");
 createButton("Create Wave", "wave");
 
-let lastClickTime = -999.0;
+// let lastClickTime = -999.0;
+
 
 scene.onPointerDown = (evt, pickResult) => {
     if (pickResult.hit && pickResult.pickedMesh?.name === "water") {
@@ -172,10 +208,22 @@ scene.onPointerDown = (evt, pickResult) => {
         }
 
         else { // create save mode
+            const idx = nextWaveIndex;
+
             const pos = pickResult.pickedPoint!;
-            waterShader.setVector3("clickPos", new Vector3(pos.x, pos.y, pos.z));
-            lastClickTime = (performance.now() - start) * 0.001;
-            waterShader.setFloat("waveTime", lastClickTime);
+
+            waveData[idx * 4 + 0] = pos.x;
+            waveData[idx * 4 + 1] = pos.y;
+            waveData[idx * 4 + 2] = pos.z;
+            waveData[idx * 4 + 3] = (performance.now() - start) * 0.001;
+
+            nextWaveIndex = (nextWaveIndex + 1) % MAX_WAVES;
+
+            waveTexture.update(waveData);
+            // const pos = pickResult.pickedPoint!;
+            // waterShader.setVector3("clickPos", new Vector3(pos.x, pos.y, pos.z));
+            // lastClickTime = (performance.now() - start) * 0.001;
+            // waterShader.setFloat("waveTime", lastClickTime);
         }
     }
 };

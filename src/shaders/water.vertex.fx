@@ -2,13 +2,22 @@ precision highp float;
 
 attribute vec3 position;
 uniform mat4 worldViewProjection;
-uniform float time;
 
 uniform float maxAge;
 uniform float speed;
 uniform float padding;
-uniform vec3 clickPos;
-uniform float waveTime;
+uniform sampler2D waveTexture;
+uniform float time;
+// uniform float maxWaves;
+const int MAX_WAVES = 32;
+
+float getWaveTime(float i) {
+    return texture2D(waveTexture, vec2((i + 0.5) / float(MAX_WAVES), 0.5)).a;
+}
+
+vec3 getWavePos(float i) {
+    return texture2D(waveTexture, vec2((i + 0.5) / float(MAX_WAVES), 0.5)).rgb;
+}
 
 varying float vHeight;
 
@@ -23,24 +32,28 @@ void main() {
     
   float ripple = 0.0;
 
-  if (waveTime >= 0.0) {
-    float age = time - waveTime;
+  for (int i = 0; i < MAX_WAVES; i++) {
+    float t = getWaveTime(float(i));
+    if (t < 0.0) continue;
 
-    if (age > 0.0 && age <= maxAge) {
-      float dist = distance(p.xz, clickPos.xz);
-      float maxRadius = maxAge * speed + padding;
+    float age = time - t;
+    if (age <= 0.0 || age > maxAge) continue;
 
-      if (dist <= maxRadius) {
-        float waveFront = age * speed;
-        float thickness = 5.0;
+    vec3 pos = getWavePos(float(i));
 
-        float mask = smoothstep(waveFront - thickness, waveFront, dist) * 
-                      (1.0 - smoothstep(waveFront, waveFront + 0.2, dist));
-        
-        float amplitude = 1.5 * exp(-age * 1.5);
-        ripple = sin((dist - waveFront) * 2.0) * amplitude * mask;
-      }
-    }
+    float dist = distance(p.xz, pos.xz);
+    float maxRadius = maxAge * speed + padding;
+
+    if (dist > maxRadius) continue;
+
+    float waveFront = age * speed;
+    float thickness = 5.0;
+
+    float mask = smoothstep(waveFront - thickness, waveFront, dist) * 
+                  (1.0 - smoothstep(waveFront, waveFront + 0.2, dist));
+    
+    float amplitude = 1.5 * exp(-age * 1.5);
+    ripple += sin((dist - waveFront) * 2.0) * amplitude * mask;
   }
 
   p.y += ripple;
