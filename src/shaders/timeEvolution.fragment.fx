@@ -1,8 +1,4 @@
-/**
-Does temporal evolution, changing each wave's amplitude over time. 
- implements equation 43
-*/
-
+#version 300 es
 precision highp float;
 
 uniform sampler2D h0Texture;
@@ -11,6 +7,7 @@ uniform float N;
 uniform float L;
 
 in vec2 vUV;
+out vec4 outColor;
 
 const float g = 9.81;
 const float TWO_PI = 6.28318530718;
@@ -37,8 +34,7 @@ void main() {
     vec4 h0 = texture(h0Texture, vUV);
     vec2 h0k  = h0.rg;
     vec2 h0mk = h0.ba;
-
     vec2 h = complexMul(h0k, euler_pos) + complexMul(h0mk, euler_neg);
 
-    glFragColor = vec4(h.x, h.y, 0.0, 1.0);
+    outColor = vec4(h.x, h.y, 0.0, 1.0);
 }
