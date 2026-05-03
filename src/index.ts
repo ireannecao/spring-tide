@@ -20,7 +20,8 @@ import { Effect } from "@babylonjs/core/Materials/effect";
 import { SpriteManager } from "@babylonjs/core/Sprites/spriteManager";
 import { Sprite } from "@babylonjs/core/Sprites/sprite";
 
-import { generatePhillipsSpectrum } from "./ocean/phillips_spectrum";
+import { generatePhillipsSpectrum } from "./ocean/PhillipsSpectrum";
+import { OceanFFT } from "./ocean/OceanFFT";
 
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Culling/ray";
@@ -144,19 +145,34 @@ const displacementData = generatePhillipsSpectrum({
     amplitude: 0.5,
 });
 
-const displacementTexture = new RawTexture(
-    displacementData,
-    N,
-    N,
+// const displacementTexture = new RawTexture(
+//     displacementData,
+//     N,
+//     N,
+//     Constants.TEXTUREFORMAT_RGBA,
+//     scene,
+//     false,
+//     false,
+//     Texture.NEAREST_SAMPLINGMODE,
+//     Engine.TEXTURETYPE_FLOAT
+// );
+
+// waterShader.setTexture("displacementMap", displacementTexture);
+
+
+const h0Texture = new RawTexture(
+    displacementData,       // your existing phillipsSpectrum output
+    N, N,
     Constants.TEXTUREFORMAT_RGBA,
-    scene,
-    false,
-    false,
+    scene, false, false,
     Texture.NEAREST_SAMPLINGMODE,
     Engine.TEXTURETYPE_FLOAT
 );
 
-waterShader.setTexture("displacementMap", displacementTexture);
+const oceanFFT = new OceanFFT(scene, h0Texture, N, 50);
+// waterShader.setTexture("displacementMap", h0Texture);
+waterShader.setTexture("displacementMap", oceanFFT.displacementTexture);
+
 
 // -----------------------------
 // Animation
@@ -166,6 +182,7 @@ const start = performance.now();
 scene.registerBeforeRender(() => {
     const time = (performance.now() - start) * 0.001;
     waterShader.setFloat("time", time);
+    oceanFFT.update(time);
 
     penguinManager.sprites.forEach((p) => {
         // add back in if we want it to move with created touch wave
