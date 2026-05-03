@@ -26,6 +26,7 @@ import { OceanFFT } from "./ocean/OceanFFT";
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Culling/ray";
 import * as GUI from "@babylonjs/gui/2D";
+import { OceanConfig } from "./config";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const engine = new Engine(canvas, true);
@@ -90,10 +91,13 @@ const waterShader = new ShaderMaterial(
         samplers: ["waveTexture", "displacementMap"]
     }
 );
+const cfg = OceanConfig.ripple;
+waterShader.setFloat("waveSpeed",     cfg.speed);
+waterShader.setFloat("waveFrequency", cfg.frequency);
+waterShader.setFloat("waveAmplitude", cfg.amplitude);
+waterShader.setFloat("decayRate",     cfg.decayRate);
+waterShader.setFloat("maxAge",        cfg.maxAge);
 
-waterShader.setFloat("maxAge", 3.0);
-waterShader.setFloat("speed", 6.0);
-waterShader.setFloat("padding", 2.0);
 // waterShader.setFloat("waveTime", -1); // explicitly disable
 // waterShader.setVector3("clickPos", new Vector3(9999, 9999, 9999));
 
