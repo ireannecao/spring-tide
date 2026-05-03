@@ -74,7 +74,7 @@ const waterShader = new ShaderMaterial(
         fragment: "water",
     },
     {
-        attributes: ["position"],
+        attributes: ["position", "uv"],
         uniforms: [
             "worldViewProjection",
             "time",
@@ -84,7 +84,7 @@ const waterShader = new ShaderMaterial(
             "speed",
             "padding"
         ],
-        samplers: ["waveTexture"]
+        samplers: ["waveTexture", "displacementMap"]
     }
 );
 
@@ -126,6 +126,28 @@ waterShader.setFloat("maxWaves", MAX_WAVES);
 // waterShader.getEffect().onCompileObservable.add(() => {
 //     console.log("Shader compiled successfully");
 // });
+
+// -----------------------------
+// Displacement Texture
+// -----------------------------
+
+const N = 64;
+
+const displacementData = new Float32Array(N * N * 4); // all zeroes
+
+const displacementTexture = new RawTexture(
+    displacementData,
+    N,
+    N,
+    Constants.TEXTUREFORMAT_RGBA,
+    scene,
+    false,
+    false,
+    Texture.NEAREST_SAMPLINGMODE,
+    Engine.TEXTURETYPE_FLOAT
+);
+
+waterShader.setTexture("displacementMap", displacementTexture);
 
 // -----------------------------
 // Animation

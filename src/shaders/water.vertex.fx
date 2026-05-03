@@ -1,12 +1,14 @@
 precision highp float;
 
 attribute vec3 position;
+attribute vec3 uv;
 uniform mat4 worldViewProjection;
 
 uniform float maxAge;
 uniform float speed;
 uniform float padding;
 uniform sampler2D waveTexture;
+uniform sampler2D displacementMap;
 uniform float time;
 // uniform float maxWaves;
 const int MAX_WAVES = 32;
@@ -24,9 +26,10 @@ varying float vHeight;
 void main() {
   vec3 p = position;
 
-  float wave =
-      sin(p.x * 0.2 + time) * 0.5 +
-      sin(p.z * 0.3 + time * 1.2) * 0.3;
+  // float wave =
+  //     sin(p.x * 0.2 + time) * 0.5 +
+  //     sin(p.z * 0.3 + time * 1.2) * 0.3;
+  float wave = texture2D(displacementMap, uv.xy).r;
 
   p.y = wave;
     
