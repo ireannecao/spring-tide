@@ -33,8 +33,8 @@ void main() {
     vec3 p = position;
 
     // BUG 3 FIX: texture() + scale for debug visibility
-    float fftDisplacement = texture(displacementMap, uv).r * 50.0;
-    p.y = fftDisplacement;
+    float fftDisplacement = textureLod(displacementMap, uv, 0.0).r;
+    p.y = fftDisplacement; 
 
     float ripple = 0.0;
     for (int i = 0; i < MAX_WAVES; i++) {

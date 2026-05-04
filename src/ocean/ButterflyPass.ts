@@ -7,6 +7,7 @@ import { Effect } from "@babylonjs/core/Materials/effect";
 import { EffectRenderer, EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
 import butterflyFrag from "../shaders/butterfly.fragment.fx";
 import inversionFrag from "../shaders/inversion.fragment.fx";
+import { ShaderLanguage, Vector2 } from "@babylonjs/core";
 
 function buildButterflyTexture(N: number, scene: Scene): RawTexture {
     const log2N = Math.log2(N);
@@ -105,6 +106,7 @@ export class ButterflyPass {
         this._butterflyLUT = buildButterflyTexture(N, scene);
         this._pingPong = [makeRTT("fft_pp0", N, scene), makeRTT("fft_pp1", N, scene)];
         this.displacementTexture = makeRTT("fft_displacement", N, scene);
+        this.displacementTexture.updateSamplingMode(Constants.TEXTURE_LINEAR_LINEAR);
 
         // 2. Initialize Effects with Direct Source Injection
         this._butterflyEffect = new EffectWrapper({
@@ -113,14 +115,23 @@ export class ButterflyPass {
             uniforms: ["stage", "N", "direction", "pingPong"],
             samplerNames: ["butterflyTexture", "pingPong0", "pingPong1"],
             name: "oceanButterfly",
+            shaderLanguage: ShaderLanguage.GLSL,
         });
 
         this._inversionEffect = new EffectWrapper({
             engine,
             fragmentShader: iSource,
-            uniforms: ["N"],
+            uniforms: ["N", "scale"],
             samplerNames: ["fftResult"],
             name: "oceanInversion",
+            shaderLanguage: ShaderLanguage.GLSL,
+        });
+        const effect = this._inversionEffect.effect;
+        scene.onBeforeRenderObservable.addOnce(() => {
+            const vertexSrc = (effect as any)._vertexSourceCode || 
+                            (effect as any)._processedVertexCode ||
+                            (effect as any).vertexSourceCode;
+            console.log("[Inversion vertex shader]:", vertexSrc?.substring(0, 500));
         });
 
         if (autoRun) {
@@ -146,6 +157,7 @@ export class ButterflyPass {
             this._butterflyEffect.onApplyObservable.clear();
             this._butterflyEffect.onApplyObservable.add(() => {
                 const e = this._butterflyEffect.effect;
+                e.setVector2("scale", new Vector2(1, 1));
                 e.setTexture("butterflyTexture", this._butterflyLUT);
                 e.setTexture("pingPong0", sourceForRead);
                 e.setTexture("pingPong1", null as any); // BREAK FEEDBACK LOOP
@@ -186,6 +198,7 @@ export class ButterflyPass {
         this._inversionEffect.onApplyObservable.clear();
         this._inversionEffect.onApplyObservable.add(() => {
             const e = this._inversionEffect.effect;
+            e.setVector2("scale", new Vector2(1, 1));
             e.setTexture("fftResult", fftResult);
             e.setFloat("N", N);
         });

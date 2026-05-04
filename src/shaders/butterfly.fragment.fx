@@ -1,5 +1,6 @@
-#version 300 es
 precision highp float;
+precision highp sampler2D;
+
 
 uniform sampler2D butterflyTexture;
 uniform sampler2D pingPong0;
@@ -10,7 +11,6 @@ uniform float stage;
 uniform float N;
 
 in vec2 vUV;
-out vec4 outColor;
 
 vec2 complexMul(vec2 a, vec2 b) {
     return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
@@ -47,5 +47,6 @@ if (direction == 0) {
 
     // If step 2 (sign flip) is done in TS, this math stays the same
     vec2 H = top.rg + complexMul(twiddle, bottom.rg);
-    outColor = vec4(H.x, H.y, 0.0, 1.0);
+    glFragColor = vec4(H.x, H.y, 0.0, 1.0);
+    
 }

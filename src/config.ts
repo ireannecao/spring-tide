@@ -6,7 +6,7 @@ export const OceanConfig = {
     windSpeed: 12,
     windDirX: 1.0,
     windDirZ: 0.0,
-    amplitude: 0.5,
+    amplitude: 10.0,
 
     // click ripples
     ripple: {
