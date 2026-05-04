@@ -20,9 +20,13 @@ import { Effect } from "@babylonjs/core/Materials/effect";
 import { SpriteManager } from "@babylonjs/core/Sprites/spriteManager";
 import { Sprite } from "@babylonjs/core/Sprites/sprite";
 
+import { generatePhillipsSpectrum } from "./ocean/PhillipsSpectrum";
+import { OceanFFT } from "./ocean/OceanFFT";
+
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Culling/ray";
 import * as GUI from "@babylonjs/gui/2D";
+import { OceanConfig } from "./config";
 
 const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const engine = new Engine(canvas, true);
@@ -74,7 +78,7 @@ const waterShader = new ShaderMaterial(
         fragment: "water",
     },
     {
-        attributes: ["position"],
+        attributes: ["position", "uv"],
         uniforms: [
             "worldViewProjection",
             "time",
@@ -84,13 +88,16 @@ const waterShader = new ShaderMaterial(
             "speed",
             "padding"
         ],
-        samplers: ["waveTexture"]
+        samplers: ["waveTexture", "displacementMap"]
     }
 );
+const cfg = OceanConfig.ripple;
+waterShader.setFloat("waveSpeed",     cfg.speed);
+waterShader.setFloat("waveFrequency", cfg.frequency);
+waterShader.setFloat("waveAmplitude", cfg.amplitude);
+waterShader.setFloat("decayRate",     cfg.decayRate);
+waterShader.setFloat("maxAge",        cfg.maxAge);
 
-waterShader.setFloat("maxAge", 3.0);
-waterShader.setFloat("speed", 6.0);
-waterShader.setFloat("padding", 2.0);
 // waterShader.setFloat("waveTime", -1); // explicitly disable
 // waterShader.setVector3("clickPos", new Vector3(9999, 9999, 9999));
 
@@ -128,6 +135,50 @@ waterShader.setFloat("maxWaves", MAX_WAVES);
 // });
 
 // -----------------------------
+// Displacement Texture
+// -----------------------------
+
+const N = 64;
+
+const displacementData = generatePhillipsSpectrum({
+    N,
+    L: 50,           // real world size of a single tile, so we want this to be the same as mesh width/height
+    windSpeed: 12,   // in m/s
+    windDirX: 1.0,
+    windDirZ: 0.0,
+    amplitude: 0.5,
+});
+
+// const displacementTexture = new RawTexture(
+//     displacementData,
+//     N,
+//     N,
+//     Constants.TEXTUREFORMAT_RGBA,
+//     scene,
+//     false,
+//     false,
+//     Texture.NEAREST_SAMPLINGMODE,
+//     Engine.TEXTURETYPE_FLOAT
+// );
+
+// waterShader.setTexture("displacementMap", displacementTexture);
+
+
+const h0Texture = new RawTexture(
+    displacementData,       // your existing phillipsSpectrum output
+    N, N,
+    Constants.TEXTUREFORMAT_RGBA,
+    scene, false, false,
+    Texture.NEAREST_SAMPLINGMODE,
+    Engine.TEXTURETYPE_FLOAT
+);
+
+const oceanFFT = new OceanFFT(scene, h0Texture, N, 50);
+// waterShader.setTexture("displacementMap", h0Texture);
+waterShader.setTexture("displacementMap", oceanFFT.displacementTexture);
+
+
+// -----------------------------
 // Animation
 // -----------------------------
 const start = performance.now();
@@ -135,6 +186,7 @@ const start = performance.now();
 scene.registerBeforeRender(() => {
     const time = (performance.now() - start) * 0.001;
     waterShader.setFloat("time", time);
+    oceanFFT.update(time);
 
     penguinManager.sprites.forEach((p) => {
         // add back in if we want it to move with created touch wave
