@@ -1,70 +1,59 @@
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
-
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
-
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
-
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import waterVertex from "./shaders/water.vertex.fx";
 import waterFragment from "./shaders/water.fragment.fx";
-
 import { Effect } from "@babylonjs/core/Materials/effect";
-
 import { SpriteManager } from "@babylonjs/core/Sprites/spriteManager";
 import { Sprite } from "@babylonjs/core/Sprites/sprite";
-
 import { generatePhillipsSpectrum } from "./ocean/PhillipsSpectrum";
 import { OceanFFT } from "./ocean/OceanFFT";
-
+import { ButterflyPass } from "./ocean/ButterflyPass";
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Culling/ray";
 import * as GUI from "@babylonjs/gui/2D";
+
+// ─── Single source of truth ───────────────────────────────────────────────────
 import { OceanConfig } from "./config";
+const { fft: fftCfg, ripple: rippleCfg } = OceanConfig;
+// ─────────────────────────────────────────────────────────────────────────────
 
-const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
-const engine = new Engine(canvas, true);
+(window as any).Effect_Index = Effect;
 
-const scene = new Scene(engine);
+const canvas  = document.getElementById("renderCanvas") as HTMLCanvasElement;
+const engine  = new Engine(canvas, true);
+const scene   = new Scene(engine);
 
-const camera = new ArcRotateCamera(
-    "cam",
-    Math.PI / 2,
-    Math.PI / 3,
-    30,
-    Vector3.Zero(),
-    scene
-);
-
-// camera.attachControl(canvas, true);
-// temp disable moving -> set specific location
-camera.setPosition(new Vector3(0, 40, -50));
-
+const camera = new ArcRotateCamera("cam", Math.PI / 2, Math.PI / 3, 30, Vector3.Zero(), scene);
+camera.attachControl(canvas, true);
+camera.setPosition(new Vector3(0, 8, -50));
 new HemisphericLight("light", new Vector3(0, 1, 0), scene);
 
 // -----------------------------
-// Geometry
+// Geometry — L drives mesh size
 // -----------------------------
 const water = MeshBuilder.CreateGround(
     "water",
     {
-        width: 50,
-        height: 50,
+        width:        fftCfg.L,  
+        height:       fftCfg.L,   
         subdivisions: 200,
     },
     scene
 );
+water.alwaysSelectAsActiveMesh = true;
 
 // -----------------------------
-// Register shaders (IMPORTANT)
+// Register shaders
 // -----------------------------
-Effect.ShadersStore["waterVertexShader"] = waterVertex;
+Effect.ShadersStore["waterVertexShader"]   = waterVertex;
 Effect.ShadersStore["waterFragmentShader"] = waterFragment;
 
 // -----------------------------
@@ -73,141 +62,137 @@ Effect.ShadersStore["waterFragmentShader"] = waterFragment;
 const waterShader = new ShaderMaterial(
     "waterShader",
     scene,
-    {
-        vertex: "water",
-        fragment: "water",
-    },
+    { vertex: "water", fragment: "water" },
     {
         attributes: ["position", "uv"],
         uniforms: [
             "worldViewProjection",
             "time",
-            "clickPos",
-            "waveTime",
+            "waveSpeed",
+            "waveFrequency",
+            "waveAmplitude",
+            "decayRate",
             "maxAge",
-            "speed",
-            "padding"
+            "maxWaves",
+            "displacementScale",   
         ],
-        samplers: ["waveTexture", "displacementMap"]
+        samplers: ["waveTexture", "displacementMap"],
     }
 );
-const cfg = OceanConfig.ripple;
-waterShader.setFloat("waveSpeed",     cfg.speed);
-waterShader.setFloat("waveFrequency", cfg.frequency);
-waterShader.setFloat("waveAmplitude", cfg.amplitude);
-waterShader.setFloat("decayRate",     cfg.decayRate);
-waterShader.setFloat("maxAge",        cfg.maxAge);
 
-// waterShader.setFloat("waveTime", -1); // explicitly disable
-// waterShader.setVector3("clickPos", new Vector3(9999, 9999, 9999));
+// Ripple uniforms from config
+waterShader.setFloat("waveSpeed",          rippleCfg.speed);
+waterShader.setFloat("waveFrequency",      rippleCfg.frequency);
+waterShader.setFloat("waveAmplitude",      rippleCfg.amplitude);
+waterShader.setFloat("decayRate",          rippleCfg.decayRate);
+waterShader.setFloat("maxAge",             rippleCfg.maxAge);
+
+// FFT displacement scale — replaces the magic * 8.0 in the old shader
+waterShader.setFloat("displacementScale",  fftCfg.displacementScale);
+
 
 water.material = waterShader;
 
+// -----------------------------
+// Click-wave texture
+// -----------------------------
 const MAX_WAVES = 32;
-
-const waveData = new Float32Array(MAX_WAVES * 4);
+const waveData  = new Float32Array(MAX_WAVES * 4);
 for (let i = 0; i < MAX_WAVES; i++) {
-    // waveData[i * 4 + 0] = 0.0;   // x (doesn't matter yet)
-    // waveData[i * 4 + 1] = 0.0;   // y
-    // waveData[i * 4 + 2] = 0.0;   // z
-    waveData[i * 4 + 3] = -1.0;  // time = INVALID
+    waveData[i * 4 + 3] = -1.0; // mark slot as inactive
 }
-
 const waveTexture = new RawTexture(
     waveData,
-    MAX_WAVES,
-    1,
+    MAX_WAVES, 1,
     Constants.TEXTUREFORMAT_RGBA,
-    scene,
-    false,
-    false,
+    scene, false, false,
     Texture.NEAREST_SAMPLINGMODE,
     Engine.TEXTURETYPE_FLOAT
 );
-
 let nextWaveIndex = 0;
-
 waterShader.setTexture("waveTexture", waveTexture);
 waterShader.setFloat("maxWaves", MAX_WAVES);
 
-// waterShader.getEffect().onCompileObservable.add(() => {
-//     console.log("Shader compiled successfully");
-// });
-
 // -----------------------------
-// Displacement Texture
+// Phillips spectrum (CPU)
+// fftCfg satisfies SpectrumConfig — all fields present
 // -----------------------------
+const displacementData = generatePhillipsSpectrum(fftCfg);
 
-const N = 64;
-
-const displacementData = generatePhillipsSpectrum({
-    N,
-    L: 50,           // real world size of a single tile, so we want this to be the same as mesh width/height
-    windSpeed: 12,   // in m/s
-    windDirX: 1.0,
-    windDirZ: 0.0,
-    amplitude: 0.5,
-});
-
-// const displacementTexture = new RawTexture(
-//     displacementData,
-//     N,
-//     N,
-//     Constants.TEXTUREFORMAT_RGBA,
-//     scene,
-//     false,
-//     false,
-//     Texture.NEAREST_SAMPLINGMODE,
-//     Engine.TEXTURETYPE_FLOAT
-// );
-
-// waterShader.setTexture("displacementMap", displacementTexture);
-
+const nonZero = Array.from(displacementData).filter(v => Math.abs(v) > 0.001).length;
+const maxVal  = Math.max(...Array.from(displacementData).map(Math.abs));
+console.log(`[Phillips] Non-zero: ${nonZero} / ${displacementData.length}, max: ${maxVal}`);
 
 const h0Texture = new RawTexture(
-    displacementData,       // your existing phillipsSpectrum output
-    N, N,
+    displacementData,
+    fftCfg.N, fftCfg.N,   // was hard-coded 64, 64
     Constants.TEXTUREFORMAT_RGBA,
     scene, false, false,
     Texture.NEAREST_SAMPLINGMODE,
     Engine.TEXTURETYPE_FLOAT
 );
 
-const oceanFFT = new OceanFFT(scene, h0Texture, N, 50);
-// waterShader.setTexture("displacementMap", h0Texture);
-waterShader.setTexture("displacementMap", oceanFFT.displacementTexture);
+// -----------------------------
+// GPU pipeline
+// -----------------------------
+const oceanFFT     = new OceanFFT(scene, h0Texture, fftCfg.N, fftCfg.L, /* autoRun= */ false);
+const butterflyPass = new ButterflyPass(scene, oceanFFT.displacementTexture, fftCfg.N, /* autoRun= */ false);
 
+waterShader.setTexture("displacementMap", butterflyPass.displacementTexture);
 
 // -----------------------------
-// Animation
+// Debug readback (frame 240)
 // -----------------------------
 const start = performance.now();
+let debugFrameCount = 0;
 
-scene.registerBeforeRender(() => {
+scene.onAfterRenderObservable.add(async () => {
+    debugFrameCount++;
+    if (debugFrameCount !== 240) return;
+
+    const N = fftCfg.N; // was a separate hard-coded `const N = 64`
+
+    const fftPixels  = await oceanFFT.displacementTexture.readPixels(0, 0, undefined, false);
+    const fftFloats  = new Float32Array(fftPixels!.buffer);
+    const fftR       = Array.from({ length: N * N }, (_, i) => fftFloats[i * 4]);
+    console.log(`[OceanFFT] max=${Math.max(...fftR.map(Math.abs)).toFixed(4)}, nonZero=${fftR.filter(v => Math.abs(v) > 0.0001).length}/${N * N}`);
+
+    const bpPixels = await butterflyPass.displacementTexture.readPixels(0, 0, undefined, false);
+    const bpFloats = new Float32Array(bpPixels!.buffer);
+    const bpR      = Array.from({ length: N * N }, (_, i) => bpFloats[i * 4]);
+    console.log(`[Butterfly out] max=${Math.max(...bpR.map(Math.abs)).toFixed(4)}, nonZero=${bpR.filter(v => Math.abs(v) > 0.0001).length}/${N * N}`);
+});
+
+console.log("WebGL version:", engine.webGLVersion);
+
+// -----------------------------
+// Render loop
+// -----------------------------
+scene.onBeforeRenderObservable.add(() => {
     const time = (performance.now() - start) * 0.001;
-    waterShader.setFloat("time", time);
+
     oceanFFT.update(time);
+    oceanFFT.runPass();
+    butterflyPass.runPass();
+
+    waterShader.setFloat("time", time);
+    waterShader.setTexture("displacementMap", butterflyPass.displacementTexture);
 
     penguinManager.sprites.forEach((p) => {
-        // add back in if we want it to move with created touch wave
-        // const age = time - lastClickTime;
-        // const speed = 6.0;
-        // const thickness = 5.0;
-        // const waveFront = age * speed;
         const wave =
             Math.sin(p.position.x * 0.2 + time) * 0.5 +
             Math.sin(p.position.z * 0.3 + time * 1.2) * 0.3;
-
-        p.position.y = wave;
-        p.angle = Math.cos(p.position.x * 0.5 + time) * 0.2;
-
+        p.position.y  = wave;
+        p.angle       = Math.cos(p.position.x * 0.5 + time) * 0.2;
     });
 });
 
-//------------------------------
-// Penguins
-//------------------------------
+engine.runRenderLoop(() => scene.render());
+window.addEventListener("resize", () => engine.resize());
 
+// -----------------------------
+// Penguins + UI
+// -----------------------------
 const penguinManager = new SpriteManager(
     "penguinManager",
     "assets/penguin.png",
@@ -219,17 +204,16 @@ const penguinManager = new SpriteManager(
 let interactionMode: "penguin" | "wave" = "penguin";
 
 const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-
-const stackPanel = new GUI.StackPanel();
+const stackPanel      = new GUI.StackPanel();
 stackPanel.width = "220px";
 stackPanel.horizontalAlignment = GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-stackPanel.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP;
+stackPanel.verticalAlignment   = GUI.Control.VERTICAL_ALIGNMENT_TOP;
 advancedTexture.addControl(stackPanel);
 
 const createButton = (text: string, mode: "penguin" | "wave") => {
     const btn = GUI.Button.CreateSimpleButton(mode, text);
-    btn.height = "40px";
-    btn.color = "white";
+    btn.height     = "40px";
+    btn.color      = "white";
     btn.background = "#2196F3";
     btn.onPointerUpObservable.add(() => {
         interactionMode = mode;
@@ -237,56 +221,27 @@ const createButton = (text: string, mode: "penguin" | "wave") => {
     });
     stackPanel.addControl(btn);
 };
-
 createButton("Place Penguin", "penguin");
-createButton("Create Wave", "wave");
-
-// let lastClickTime = -999.0;
-
+createButton("Create Wave",   "wave");
 
 scene.onPointerDown = (evt, pickResult) => {
-    if (pickResult.hit && pickResult.pickedMesh?.name === "water") {
-        if (interactionMode === "penguin") {
-            const penguin = new Sprite("penguin", penguinManager);
+    if (!pickResult.hit || pickResult.pickedMesh?.name !== "water") return;
 
-            penguin.width = 8.0;
-            penguin.height = 8.0;
-
-            penguin.position = pickResult.pickedPoint!.clone();
-
-            penguin.position.y += -1.5;
-
-            console.log("Penguin deployed to waves at:", penguin.position);
-        }
-
-        else { // create save mode
-            const idx = nextWaveIndex;
-
-            const pos = pickResult.pickedPoint!;
-
-            waveData[idx * 4 + 0] = pos.x;
-            waveData[idx * 4 + 1] = pos.y;
-            waveData[idx * 4 + 2] = pos.z;
-            waveData[idx * 4 + 3] = (performance.now() - start) * 0.001;
-
-            nextWaveIndex = (nextWaveIndex + 1) % MAX_WAVES;
-
-            waveTexture.update(waveData);
-            // const pos = pickResult.pickedPoint!;
-            // waterShader.setVector3("clickPos", new Vector3(pos.x, pos.y, pos.z));
-            // lastClickTime = (performance.now() - start) * 0.001;
-            // waterShader.setFloat("waveTime", lastClickTime);
-        }
+    if (interactionMode === "penguin") {
+        const penguin    = new Sprite("penguin", penguinManager);
+        penguin.width    = 8.0;
+        penguin.height   = 8.0;
+        penguin.position = pickResult.pickedPoint!.clone();
+        penguin.position.y += -1.5;
+        console.log("Penguin deployed at:", penguin.position);
+    } else {
+        const idx = nextWaveIndex;
+        const pos = pickResult.pickedPoint!;
+        waveData[idx * 4 + 0] = pos.x;
+        waveData[idx * 4 + 1] = pos.y;
+        waveData[idx * 4 + 2] = pos.z;
+        waveData[idx * 4 + 3] = (performance.now() - start) * 0.001;
+        nextWaveIndex = (nextWaveIndex + 1) % MAX_WAVES;
+        waveTexture.update(waveData);
     }
 };
-
-// -----------------------------
-// Render loop
-// -----------------------------
-engine.runRenderLoop(() => {
-    scene.render();
-});
-
-window.addEventListener("resize", () => {
-    engine.resize();
-});

@@ -42,8 +42,8 @@ export function generatePhillipsSpectrum(cfg: SpectrumConfig): Float32Array {
     for (let n = 0; n < N; n++) {
         for (let m = 0; m < N; m++) {
             // equation 36
-            const kx = (TWO_PI / L) * (n - N / 2);
-            const kz = (TWO_PI / L) * (m - N / 2);
+            const kx = (TWO_PI / L) * (m - N / 2);
+            const kz = (TWO_PI / L) * (n - N / 2);
             // wave number: small = large waves, large k = high frequency ripplea
             const kLen = Math.sqrt(kx * kx + kz * kz); 
 

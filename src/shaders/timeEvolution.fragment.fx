@@ -1,9 +1,5 @@
-/**
-Does temporal evolution, changing each wave's amplitude over time. 
- implements equation 43
-*/
-
 precision highp float;
+precision highp sampler2D;
 
 uniform sampler2D h0Texture;
 uniform float time;
@@ -20,11 +16,11 @@ vec2 complexMul(vec2 a, vec2 b) {
 }
 
 void main() {
-    float n = floor(vUV.x * N) - N * 0.5;
-    float m = floor(vUV.y * N) - N * 0.5;
+    float n = floor(vUV.y * N) - N * 0.5;
+    float m = floor(vUV.x * N) - N * 0.5;
 
-    float kx = (TWO_PI / L) * n;
-    float kz = (TWO_PI / L) * m;
+    float kx = (TWO_PI / L) * m;
+    float kz = (TWO_PI / L) * n;
     float kLen = length(vec2(kx, kz));
 
     float omega = sqrt(g * max(kLen, 0.0001));
@@ -35,10 +31,10 @@ void main() {
     vec2 euler_neg = vec2(cosT, -sinT);
 
     vec4 h0 = texture(h0Texture, vUV);
-    vec2 h0k  = h0.rg;
-    vec2 h0mk = h0.ba;
+    vec2 h = complexMul(h0.rg, euler_pos) + complexMul(h0.ba, euler_neg);
 
-    vec2 h = complexMul(h0k, euler_pos) + complexMul(h0mk, euler_neg);
-
+    // Final output assignment
+    // glFragColor = vec4(h.x, h.y, 0.0, 1.0);
+    // glFragColor = vec4(vUV, 0.0, 1.0);
     glFragColor = vec4(h.x, h.y, 0.0, 1.0);
 }
