@@ -66,7 +66,9 @@ const waterShader = new ShaderMaterial(
     {
         attributes: ["position", "uv"],
         uniforms: [
+            "world",
             "worldViewProjection",
+            "vEyePosition",
             "time",
             "waveSpeed",
             "waveFrequency",
@@ -174,6 +176,8 @@ scene.onBeforeRenderObservable.add(() => {
     oceanFFT.update(time);
     oceanFFT.runPass();
     butterflyPass.runPass();
+
+    waterShader.setVector3("vEyePosition", camera.position);
 
     waterShader.setFloat("time", time);
     waterShader.setTexture("displacementMap", butterflyPass.displacementTexture);
