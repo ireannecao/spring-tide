@@ -37,7 +37,7 @@ void main() {
 
     vec4 displacements = textureLod(displacementMap, uv, 0.0);
     float dy = displacements.r * displacementScale;
-    float dxz = displacements.g * displacementScale * 1.5; // 1.5 choppiness
+    float dxz = displacements.g * displacementScale * .5; // .5 choppiness
 
     p.y = dy;
     p.x += dxz; 
