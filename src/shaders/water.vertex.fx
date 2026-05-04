@@ -15,10 +15,10 @@ uniform float waveFrequency;
 uniform float waveAmplitude;
 uniform float decayRate;
 uniform float maxAge;
+uniform float displacementScale;  
 
 const float TWO_PI = 6.28318530718;
 
-// BUG 3 FIX: use texture() not texture2D() in WebGL2/GLSL300
 float getWaveTime(float i) {
     return texture(waveTexture, vec2((i + 0.5) / float(MAX_WAVES), 0.5)).a;
 }
@@ -32,9 +32,8 @@ varying float vHeight;
 void main() {
     vec3 p = position;
 
-    // BUG 3 FIX: texture() + scale for debug visibility
     float fftDisplacement = textureLod(displacementMap, uv, 0.0).r;
-    p.y = fftDisplacement; 
+    p.y = fftDisplacement * displacementScale;
 
     float ripple = 0.0;
     for (int i = 0; i < MAX_WAVES; i++) {
