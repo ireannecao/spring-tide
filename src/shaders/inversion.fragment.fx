@@ -15,6 +15,7 @@ void main() {
     vec4 s = texture(fftResult, uv);
     float sgn = mod(ix + iy, 2.0) == 0.0 ? 1.0 : -1.0;
     float height = (sgn * s.r) / (N * N);
+    float displacement = (sgn * s.b) / (N * N);
 
-    glFragColor = vec4(height, height, height, 1.0);
+    glFragColor = vec4(height, displacement, 0.0, 1.0);
 }

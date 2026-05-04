@@ -32,8 +32,16 @@ varying float vHeight;
 void main() {
     vec3 p = position;
 
-    float fftDisplacement = textureLod(displacementMap, uv, 0.0).r;
-    p.y = fftDisplacement * displacementScale;
+    // float fftDisplacement = textureLod(displacementMap, uv, 0.0).r;
+    // p.y = fftDisplacement * displacementScale;
+
+    vec4 displacements = textureLod(displacementMap, uv, 0.0);
+    float dy = displacements.r * displacementScale;
+    float dxz = displacements.g * displacementScale * 1.5; // 1.5 choppiness
+
+    p.y = dy;
+    p.x += dxz; 
+    p.z += dxz;
 
     float ripple = 0.0;
     for (int i = 0; i < MAX_WAVES; i++) {
