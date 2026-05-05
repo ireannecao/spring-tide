@@ -8,6 +8,7 @@ export const OceanConfig = {
     windDirZ: 0.2,       // Added a tiny bit of Z to break the "perfect row" look
     amplitude: 10.0,      // SIGNIFICANTLY lower (Phillips energy scale)
     displacementScale: 2.0, // Lowered to keep it from spiking
+    choppiness: 1.0,
 },
     ripple: {
         speed: 10.0,             // m/s
@@ -16,4 +17,7 @@ export const OceanConfig = {
         decayRate: 0.5,         // per second
         maxAge: 4.0,            // seconds
     },
+    visuals: {
+        skyBrightness: 0.8,
+    }
 };

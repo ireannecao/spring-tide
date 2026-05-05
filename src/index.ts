@@ -18,6 +18,7 @@ import { OceanFFT } from "./ocean/OceanFFT";
 import { ButterflyPass } from "./ocean/ButterflyPass";
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Culling/ray";
+import { Color4 } from "@babylonjs/core";
 import * as GUI from "@babylonjs/gui/2D";
 
 // ─── Single source of truth ───────────────────────────────────────────────────
@@ -76,7 +77,9 @@ const waterShader = new ShaderMaterial(
             "decayRate",
             "maxAge",
             "maxWaves",
-            "displacementScale",   
+            "displacementScale",  
+            "choppiness",
+            "skyBrightness", 
         ],
         samplers: ["waveTexture", "displacementMap"],
     }
@@ -92,6 +95,9 @@ waterShader.setFloat("maxAge",             rippleCfg.maxAge);
 // FFT displacement scale — replaces the magic * 8.0 in the old shader
 waterShader.setFloat("displacementScale",  fftCfg.displacementScale);
 
+// sliders control this
+waterShader.setFloat("choppiness", fftCfg.choppiness);
+waterShader.setFloat("skyBrightness", OceanConfig.visuals.skyBrightness);
 
 water.material = waterShader;
 
@@ -297,3 +303,42 @@ scene.onPointerDown = (evt, pickResult) => {
         console.log("Penguin deployed at:", penguin.position);
     }
 };
+
+const baseSkyColor = new Color4(0.7, 0.85, 1.0, 1.0);
+
+const createSlider = (text: string, min: number, max: number, initial: number, onChange: (v: number) => void) => {
+    const header = new GUI.TextBlock();
+    header.text = `${text}: ${initial.toFixed(2)}`;
+    header.height = "30px";
+    header.color = "white";
+    stackPanel.addControl(header);
+
+    const slider = new GUI.Slider();
+    slider.minimum = min;
+    slider.maximum = max;
+    slider.value = initial;
+    slider.height = "20px";
+    slider.width = "200px";
+    slider.onValueChangedObservable.add((value) => {
+        header.text = `${text}: ${value.toFixed(2)}`;
+        onChange(value);
+    });
+    stackPanel.addControl(slider);
+};
+
+// Choppiness Slider
+createSlider("Choppiness", 0, 2.0, fftCfg.choppiness, (v) => {
+    waterShader.setFloat("choppiness", v);
+});
+
+// Day/Night Sky Slider
+createSlider("Sky Light", 0.1, 1.0, OceanConfig.visuals.skyBrightness, (v) => {
+    waterShader.setFloat("skyBrightness", v);
+
+    scene.clearColor = new Color4(
+        baseSkyColor.r * v,
+        baseSkyColor.g * v,
+        baseSkyColor.b * v,
+        1.0
+    );
+});
