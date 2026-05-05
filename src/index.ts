@@ -33,7 +33,7 @@ const engine  = new Engine(canvas, true);
 const scene   = new Scene(engine);
 
 const camera = new ArcRotateCamera("cam", Math.PI / 2, Math.PI / 3, 30, Vector3.Zero(), scene);
-camera.attachControl(canvas, true);
+// camera.attachControl(canvas, true);
 camera.setPosition(new Vector3(0, 8, -50));
 new HemisphericLight("light", new Vector3(0, 1, 0), scene);
 
@@ -236,8 +236,9 @@ scene.onBeforeRenderObservable.add(() => {
                     rippleHeight += Math.sin((dist - waveFront) * rippleCfg.frequency * TWO_PI) * envelope * mask;
                 }
             }
+            const depth = (p as any).mySubmersion || 1.3;
 
-            const targetHeight = fftHeight + rippleHeight - 1.3; // can change param based on penguin weight
+            const targetHeight = fftHeight + rippleHeight - depth; // can change param based on penguin weight
 
             p.position.y = p.position.y * 0.9 + targetHeight * 0.1;
             p.angle = Math.sin(time + p.position.x) * 0.1; // bobbing
@@ -282,24 +283,32 @@ const createButton = (text: string, mode: "penguin" | "wave") => {
 createButton("Place Penguin", "penguin");
 createButton("Create Wave",   "wave");
 
+const SPLASH_RATIO = 0.25;
+
 scene.onPointerDown = (evt, pickResult) => {
     if (!pickResult.hit || pickResult.pickedMesh?.name !== "water") return;
 
     // wave also happens for penguin
+    const penCfg = OceanConfig.penguin;
     const idx = nextWaveIndex;
     const pos = pickResult.pickedPoint!;
+
     waveData[idx * 4 + 0] = pos.x;
-    waveData[idx * 4 + 1] = pos.y;
+    waveData[idx * 4 + 1] = rippleCfg.amplitude * (currentSize * SPLASH_RATIO);
     waveData[idx * 4 + 2] = pos.z;
     waveData[idx * 4 + 3] = (performance.now() - start) * 0.001;
+
+    waterShader.setFloat("waveAmplitude", rippleCfg.amplitude * penCfg.plopAmplitude);
+
     nextWaveIndex = (nextWaveIndex + 1) % MAX_WAVES;
     waveTexture.update(waveData);
 
     if (interactionMode === "penguin") {
         const penguin = new Sprite("penguin", penguinManager);
-        penguin.width = 8.0;
-        penguin.height = 8.0;
+        penguin.width = currentSize;
+        penguin.height = currentSize;
         penguin.position = pos.clone();
+        (penguin as any).mySubmersion = currentSubmersion;
         penguin.position.y += -12.0;
         console.log("Penguin deployed at:", penguin.position);
     }
@@ -309,7 +318,7 @@ const baseSkyColor = new Color4(0.7, 0.85, 1.0, 1.0);
 
 const createSlider = (text: string, min: number, max: number, initial: number, onChange: (v: number) => void) => {
     const header = new GUI.TextBlock();
-    header.text = `${text}: ${initial.toFixed(2)}`;
+    header.text = `${text}`;
     header.height = "30px";
     header.color = "white";
     stackPanel.addControl(header);
@@ -321,7 +330,6 @@ const createSlider = (text: string, min: number, max: number, initial: number, o
     slider.height = "20px";
     slider.width = "200px";
     slider.onValueChangedObservable.add((value) => {
-        header.text = `${text}: ${value.toFixed(2)}`;
         onChange(value);
     });
     stackPanel.addControl(slider);
@@ -370,3 +378,23 @@ createSlider("Time of Day", 0, 1, OceanConfig.visuals.skyBrightness, (v) => {
 });
 
 updateEnvironment(OceanConfig.visuals.skyBrightness);
+
+let currentSize = 8.0;
+let currentSubmersion = 1.3;
+
+createSlider("Penguin Scale", 2.0, 20.0, 8.0, (v) => {
+    const SUBMERSION_RATIO = 0.3; // toggle with these
+    const SPLASH_RATIO = 0.1; // toggle with these
+
+    // OceanConfig.penguin.size = v; 
+    // OceanConfig.penguin.submersion = v * SUBMERSION_RATIO;
+    currentSize = v;
+    currentSubmersion = v * SUBMERSION_RATIO;
+    
+    waterShader.setFloat("waveAmplitude", rippleCfg.amplitude * (v * SPLASH_RATIO));
+
+    // penguinManager.sprites.forEach(p => {
+    //     p.width = v;
+    //     p.height = v;
+    // });
+});
