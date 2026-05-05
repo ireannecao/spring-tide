@@ -4,6 +4,7 @@ uniform vec3 vEyePosition;      // camera position
 uniform sampler2D displacementMap;
 uniform float displacementScale;
 uniform float skyBrightness;
+uniform vec3 dynamicSkyColor;
 
 // fresner affect for interactive waves too
 uniform sampler2D waveTexture;
@@ -67,10 +68,12 @@ void main() {
   
   vec3 deep = vec3(0.0, 0.2, 0.5);
   vec3 shallow = vec3(0.2, 0.5, 0.8);
-  vec3 skyColor = vec3(0.7, 0.85, 1.0) * skyBrightness; // day -> night interaction
+  vec3 skyColor = dynamicSkyColor;
+
+  // vec3 skyColor = vec3(0.7, 0.85, 1.0) * skyBrightness; // day -> night interaction
 
   vec3 waterBase = mix(deep, shallow, vHeight * 0.5 + 0.5);
-  vec3 finalColor = mix(waterBase, skyColor, fresnel);
+  vec3 finalColor = mix(waterBase, dynamicSkyColor, fresnel);
 
   gl_FragColor = vec4(finalColor, 1.0);
 }

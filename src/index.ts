@@ -18,12 +18,12 @@ import { OceanFFT } from "./ocean/OceanFFT";
 import { ButterflyPass } from "./ocean/ButterflyPass";
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Culling/ray";
-import { Color4 } from "@babylonjs/core";
+import { Color3, Color4 } from "@babylonjs/core";
 import * as GUI from "@babylonjs/gui/2D";
 
 // ─── Single source of truth ───────────────────────────────────────────────────
 import { OceanConfig } from "./config";
-const { fft: fftCfg, ripple: rippleCfg } = OceanConfig;
+const { fft: fftCfg, ripple: rippleCfg, visuals: vis } = OceanConfig;
 // ─────────────────────────────────────────────────────────────────────────────
 
 (window as any).Effect_Index = Effect;
@@ -80,6 +80,7 @@ const waterShader = new ShaderMaterial(
             "displacementScale",  
             "choppiness",
             "skyBrightness", 
+            "dynamicSkyColor",
         ],
         samplers: ["waveTexture", "displacementMap"],
     }
@@ -332,13 +333,40 @@ createSlider("Choppiness", 0, 2.0, fftCfg.choppiness, (v) => {
 });
 
 // Day/Night Sky Slider
-createSlider("Sky Light", 0.1, 1.0, OceanConfig.visuals.skyBrightness, (v) => {
-    waterShader.setFloat("skyBrightness", v);
+// createSlider("Sky Light", 0.1, 1.0, OceanConfig.visuals.skyBrightness, (v) => {
+//     waterShader.setFloat("skyBrightness", v);
 
-    scene.clearColor = new Color4(
-        baseSkyColor.r * v,
-        baseSkyColor.g * v,
-        baseSkyColor.b * v,
-        1.0
-    );
+//     scene.clearColor = new Color4(
+//         baseSkyColor.r * v,
+//         baseSkyColor.g * v,
+//         baseSkyColor.b * v,
+//         1.0
+//     );
+// });
+const updateEnvironment = (v: number) => {
+    let finalColor: Color3;
+    const vis = OceanConfig.visuals;
+
+    if (v > 0.5) {
+        const t = (v - 0.5) * 2.0;
+        finalColor = Color3.Lerp(vis.sunsetColor, vis.noonColor, t);
+    } else {
+        const t = v * 2.0;
+        finalColor = Color3.Lerp(vis.nightColor, vis.sunsetColor, t);
+    }
+
+    waterShader.setVector3("dynamicSkyColor", new Vector3(finalColor.r, finalColor.g, finalColor.b));
+    scene.clearColor = new Color4(finalColor.r, finalColor.g, finalColor.b, 1.0);
+
+    const light = scene.getLightByName("light") as HemisphericLight;
+    if (light) {
+        light.diffuse = finalColor;
+        light.intensity = 0.2 + v * 0.8;
+    }
+};
+
+createSlider("Time of Day", 0, 1, OceanConfig.visuals.skyBrightness, (v) => {
+    updateEnvironment(v);
 });
+
+updateEnvironment(OceanConfig.visuals.skyBrightness);

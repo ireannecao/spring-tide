@@ -1,3 +1,5 @@
+import { Color3 } from "@babylonjs/core";
+
 // config.ts — single source of truth for all ocean parameters
 export const OceanConfig = {
     fft: {
@@ -18,6 +20,9 @@ export const OceanConfig = {
         maxAge: 4.0,            // seconds
     },
     visuals: {
-        skyBrightness: 0.8,
+        skyBrightness: 1.0,
+        noonColor: new Color3(0.7, 0.85, 1.0),
+        sunsetColor: new Color3(1.0, 0.65, 0.2),
+        nightColor: new Color3(0.05, 0.05, 0.2),
     }
 };
