@@ -22,8 +22,9 @@ void main() {
     float kx = (TWO_PI / L) * m;
     float kz = (TWO_PI / L) * n;
     float kLen = length(vec2(kx, kz));
+    float kMag = max(kLen, 0.0001);
 
-    float omega = sqrt(g * max(kLen, 0.0001));
+    float omega = sqrt(g * kMag);
     float cosT = cos(omega * time);
     float sinT = sin(omega * time);
 
@@ -33,8 +34,10 @@ void main() {
     vec4 h0 = texture(h0Texture, vUV);
     vec2 h = complexMul(h0.rg, euler_pos) + complexMul(h0.ba, euler_neg);
 
+    vec2 kVec = vec2(kx, kz) / kMag;
+    vec2 h_horiz = complexMul(vec2(-h.y, h.x), kVec.xx);
     // Final output assignment
     // glFragColor = vec4(h.x, h.y, 0.0, 1.0);
     // glFragColor = vec4(vUV, 0.0, 1.0);
-    glFragColor = vec4(h.x, h.y, 0.0, 1.0);
+    glFragColor = vec4(h.x, h.y, h_horiz.x, h_horiz.y);
 }

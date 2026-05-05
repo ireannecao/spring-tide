@@ -46,7 +46,10 @@ if (direction == 0) {
     vec4 bottom = texture(pingPong0, uvBottom);
 
     // If step 2 (sign flip) is done in TS, this math stays the same
-    vec2 H = top.rg + complexMul(twiddle, bottom.rg);
-    glFragColor = vec4(H.x, H.y, 0.0, 1.0);
+    // vec2 H = top.rg + complexMul(twiddle, bottom.rg);
+    // glFragColor = vec4(H.x, H.y, 0.0, 1.0);
+    vec2 H_height = top.rg + complexMul(twiddle, bottom.rg);
+    vec2 H_choppy = top.ba + complexMul(twiddle, bottom.ba);
+    glFragColor = vec4(H_height, H_choppy);
     
 }

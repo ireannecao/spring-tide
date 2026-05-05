@@ -141,6 +141,11 @@ export class ButterflyPass {
 
     public runPass() { this._runFFT(this._hktTexture); }
 
+    public async getDisplacementData(): Promise<Float32Array> {
+        const pixels = await this.displacementTexture.readPixels();
+        return new Float32Array(pixels!.buffer);
+    }
+
     private _runFFT(hktTexture: RenderTargetTexture) {
         if (!this._butterflyEffect.effect.isReady() || !this._inversionEffect.effect.isReady()) return;
 

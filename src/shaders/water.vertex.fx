@@ -4,6 +4,7 @@ attribute vec3 position;
 attribute vec2 uv;
 
 uniform mat4 worldViewProjection;
+uniform mat4 world;
 uniform float time;
 
 uniform sampler2D displacementMap;
@@ -28,12 +29,22 @@ vec3 getWavePos(float i) {
 }
 
 varying float vHeight;
+varying vec3 vWorldPos;
+varying vec2 vUV;
 
 void main() {
     vec3 p = position;
 
-    float fftDisplacement = textureLod(displacementMap, uv, 0.0).r;
-    p.y = fftDisplacement * displacementScale;
+    // float fftDisplacement = textureLod(displacementMap, uv, 0.0).r;
+    // p.y = fftDisplacement * displacementScale;
+
+    vec4 displacements = textureLod(displacementMap, uv, 0.0);
+    float dy = displacements.r * displacementScale;
+    float dxz = displacements.g * displacementScale * 1.0; // 1.0 choppiness
+
+    p.y = dy;
+    p.x += dxz; 
+    p.z += dxz;
 
     float ripple = 0.0;
     for (int i = 0; i < MAX_WAVES; i++) {
@@ -61,6 +72,9 @@ void main() {
 
     p.y += ripple;
     vHeight = p.y;
+    vUV = uv;
+
+    vWorldPos = (world * vec4(p, 1.0)).xyz; // local position
 
     gl_Position = worldViewProjection * vec4(p, 1.0);
 }
