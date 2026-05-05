@@ -204,9 +204,35 @@ scene.onBeforeRenderObservable.add(() => {
             const yPixel = Math.max(0, Math.min(N - 1, Math.floor(v * N)));
 
             const pixelIdx = (yPixel * N + xPixel) * 4;
-            const realHeight = displacementBuffer![pixelIdx] * fftCfg.displacementScale;
+            const fftHeight = displacementBuffer![pixelIdx] * fftCfg.displacementScale;
 
-            p.position.y = realHeight - 1.0;
+            let rippleHeight = 0;
+            const TWO_PI = 6.2831853;
+
+            for (let i = 0; i < MAX_WAVES; i++) {
+                const spawnTime = waveData[i * 4 + 3];
+                if (spawnTime < 0.0) continue;
+
+                const age = time - spawnTime;
+                if (age <= 0.0 || age > rippleCfg.maxAge) continue;
+
+                const dx = p.position.x - waveData[i * 4 + 0];
+                const dz = p.position.z - waveData[i * 4 + 2];
+                const dist = Math.sqrt(dx * dx + dz * dz);
+
+                const waveFront = age * rippleCfg.speed;
+                const ringWidth = rippleCfg.speed * 2.0;
+
+                if (dist < waveFront + ringWidth && dist > waveFront - ringWidth) {
+                    const envelope = rippleCfg.amplitude * Math.exp(-age * rippleCfg.decayRate);
+                    const mask = Math.max(0, 1.0 - Math.abs(dist - waveFront) / ringWidth);
+                    rippleHeight += Math.sin((dist - waveFront) * rippleCfg.frequency * TWO_PI) * envelope * mask;
+                }
+            }
+
+            const targetHeight = fftHeight + rippleHeight - 1.3; // can change param based on penguin weight
+
+            p.position.y = p.position.y * 0.9 + targetHeight * 0.1;
             p.angle = Math.sin(time + p.position.x) * 0.1; // bobbing
         });
     }
