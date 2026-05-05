@@ -298,7 +298,7 @@ scene.onPointerDown = (evt, pickResult) => {
     waveData[idx * 4 + 2] = pos.z;
     waveData[idx * 4 + 3] = (performance.now() - start) * 0.001;
 
-    waterShader.setFloat("waveAmplitude", rippleCfg.amplitude * penCfg.plopAmplitude);
+    // waterShader.setFloat("waveAmplitude", rippleCfg.amplitude * penCfg.plopAmplitude);
 
     nextWaveIndex = (nextWaveIndex + 1) % MAX_WAVES;
     waveTexture.update(waveData);
@@ -307,9 +307,12 @@ scene.onPointerDown = (evt, pickResult) => {
         const penguin = new Sprite("penguin", penguinManager);
         penguin.width = currentSize;
         penguin.height = currentSize;
-        penguin.position = pos.clone();
+        const placementPos = pos.clone();
+        placementPos.x += (currentSize / 4);
+        
+        penguin.position = placementPos;
         (penguin as any).mySubmersion = currentSubmersion;
-        penguin.position.y += -12.0;
+        penguin.position.y += 0.0;
         console.log("Penguin deployed at:", penguin.position);
     }
 };

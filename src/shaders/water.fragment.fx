@@ -23,12 +23,14 @@ varying vec2 vUV;
 float getRippleHeight(vec2 uv) {
     float totalHeight = 0.0;
     for (int i = 0; i < 32; i++) {
-        vec4 data = texture2D(waveTexture, vec2(float(i) / 32.0, 0.5));
+        vec4 data = texture2D(waveTexture, vec2((float(i) + 0.5) / 32.0, 0.5));
         float spawnTime = data.w;
         if (spawnTime < 0.0) continue;
 
         float age = time - spawnTime;
         if (age > maxAge) continue;
+
+        float individualAmp = data.g;
 
         vec2 center = data.xz;
         float dist = distance(vWorldPos.xz, center);
@@ -36,7 +38,7 @@ float getRippleHeight(vec2 uv) {
         // circular wave formula
         float wave = sin(dist * waveFrequency - age * waveSpeed);
         float decay = exp(-age * decayRate) * max(0.0, 1.0 - (dist / 50.0));
-        totalHeight += wave * waveAmplitude * decay;
+        totalHeight += wave * individualAmp * decay;
     }
     return totalHeight;
 }

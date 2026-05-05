@@ -49,7 +49,9 @@ void main() {
 
     float ripple = 0.0;
     for (int i = 0; i < MAX_WAVES; i++) {
-        float t = getWaveTime(float(i));
+        // float t = getWaveTime(float(i));
+        vec4 data = texture(waveTexture, vec2((float(i) + 0.5) / float(MAX_WAVES), 0.5));
+        float t = data.a;
         if (t < 0.0) continue;
 
         float age = time - t;
@@ -61,9 +63,11 @@ void main() {
         float maxRadius = maxAge * waveSpeed;
         if (dist > maxRadius) continue;
 
+        float individualAmp = data.y;
+
         float waveFront = age * waveSpeed;
         float ringWidth = waveSpeed * 2.0;
-        float envelope  = waveAmplitude * exp(-age * decayRate);
+        float envelope  = individualAmp * exp(-age * decayRate);
 
         float mask = smoothstep(waveFront - ringWidth, waveFront, dist)
                    * (1.0 - smoothstep(waveFront, waveFront + ringWidth * 0.1, dist));
