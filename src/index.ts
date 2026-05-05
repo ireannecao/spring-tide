@@ -170,6 +170,9 @@ console.log("WebGL version:", engine.webGLVersion);
 // -----------------------------
 // Render loop
 // -----------------------------
+let displacementBuffer: Float32Array | null = null;
+let isFetching = false;
+
 scene.onBeforeRenderObservable.add(() => {
     const time = (performance.now() - start) * 0.001;
 
@@ -177,18 +180,36 @@ scene.onBeforeRenderObservable.add(() => {
     oceanFFT.runPass();
     butterflyPass.runPass();
 
+    if (!isFetching) {
+        isFetching = true;
+        butterflyPass.getDisplacementData().then((data) => {
+            displacementBuffer = data;
+            isFetching = false;
+        });
+    }
+
     waterShader.setVector3("vEyePosition", camera.position);
 
     waterShader.setFloat("time", time);
     waterShader.setTexture("displacementMap", butterflyPass.displacementTexture);
 
-    penguinManager.sprites.forEach((p) => {
-        const wave =
-            Math.sin(p.position.x * 0.2 + time) * 0.5 +
-            Math.sin(p.position.z * 0.3 + time * 1.2) * 0.3;
-        p.position.y  = wave;
-        p.angle       = Math.cos(p.position.x * 0.5 + time) * 0.2;
-    });
+    if (displacementBuffer != null) {
+        const N = fftCfg.N;
+        const L = fftCfg.L;
+        penguinManager.sprites.forEach((p) => {
+            const u = (p.position.x / L) + 0.5;
+            const v = (p.position.z / L) + 0.5;
+
+            const xPixel = Math.max(0, Math.min(N - 1, Math.floor(u * N)));
+            const yPixel = Math.max(0, Math.min(N - 1, Math.floor(v * N)));
+
+            const pixelIdx = (yPixel * N + xPixel) * 4;
+            const realHeight = displacementBuffer![pixelIdx] * fftCfg.displacementScale;
+
+            p.position.y = realHeight - 1.0;
+            p.angle = Math.sin(time + p.position.x) * 0.1; // bobbing
+        });
+    }
 });
 
 engine.runRenderLoop(() => scene.render());
@@ -236,7 +257,7 @@ scene.onPointerDown = (evt, pickResult) => {
         penguin.width    = 8.0;
         penguin.height   = 8.0;
         penguin.position = pickResult.pickedPoint!.clone();
-        penguin.position.y += -1.5;
+        penguin.position.y += -12.0;
         console.log("Penguin deployed at:", penguin.position);
     } else {
         const idx = nextWaveIndex;
