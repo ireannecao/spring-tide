@@ -252,21 +252,22 @@ createButton("Create Wave",   "wave");
 scene.onPointerDown = (evt, pickResult) => {
     if (!pickResult.hit || pickResult.pickedMesh?.name !== "water") return;
 
+    // wave also happens for penguin
+    const idx = nextWaveIndex;
+    const pos = pickResult.pickedPoint!;
+    waveData[idx * 4 + 0] = pos.x;
+    waveData[idx * 4 + 1] = pos.y;
+    waveData[idx * 4 + 2] = pos.z;
+    waveData[idx * 4 + 3] = (performance.now() - start) * 0.001;
+    nextWaveIndex = (nextWaveIndex + 1) % MAX_WAVES;
+    waveTexture.update(waveData);
+
     if (interactionMode === "penguin") {
-        const penguin    = new Sprite("penguin", penguinManager);
-        penguin.width    = 8.0;
-        penguin.height   = 8.0;
-        penguin.position = pickResult.pickedPoint!.clone();
+        const penguin = new Sprite("penguin", penguinManager);
+        penguin.width = 8.0;
+        penguin.height = 8.0;
+        penguin.position = pos.clone();
         penguin.position.y += -12.0;
         console.log("Penguin deployed at:", penguin.position);
-    } else {
-        const idx = nextWaveIndex;
-        const pos = pickResult.pickedPoint!;
-        waveData[idx * 4 + 0] = pos.x;
-        waveData[idx * 4 + 1] = pos.y;
-        waveData[idx * 4 + 2] = pos.z;
-        waveData[idx * 4 + 3] = (performance.now() - start) * 0.001;
-        nextWaveIndex = (nextWaveIndex + 1) % MAX_WAVES;
-        waveTexture.update(waveData);
     }
 };

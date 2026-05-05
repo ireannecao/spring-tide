@@ -10,10 +10,10 @@ export const OceanConfig = {
     displacementScale: 2.0, // Lowered to keep it from spiking
 },
     ripple: {
-        speed: 2.0,             // m/s
-        frequency: 0.8,         // cycles/m
-        amplitude: 2.0,         // metres
-        decayRate: 0.6,         // per second
-        maxAge: 8.0,            // seconds
+        speed: 10.0,             // m/s
+        frequency: 0.1,         // cycles/m
+        amplitude: 1.0,         // metres
+        decayRate: 0.5,         // per second
+        maxAge: 4.0,            // seconds
     },
 };
