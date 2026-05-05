@@ -17,6 +17,7 @@ uniform float waveAmplitude;
 uniform float decayRate;
 uniform float maxAge;
 uniform float displacementScale;  
+uniform float choppiness;
 
 const float TWO_PI = 6.28318530718;
 
@@ -40,7 +41,7 @@ void main() {
 
     vec4 displacements = textureLod(displacementMap, uv, 0.0);
     float dy = displacements.r * displacementScale;
-    float dxz = displacements.g * displacementScale * 1.0; // 1.0 choppiness
+    float dxz = displacements.g * displacementScale * choppiness; // chopiness slider
 
     p.y = dy;
     p.x += dxz; 

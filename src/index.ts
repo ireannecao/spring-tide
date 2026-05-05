@@ -18,11 +18,12 @@ import { OceanFFT } from "./ocean/OceanFFT";
 import { ButterflyPass } from "./ocean/ButterflyPass";
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Culling/ray";
+import { Color3, Color4 } from "@babylonjs/core";
 import * as GUI from "@babylonjs/gui/2D";
 
 // ─── Single source of truth ───────────────────────────────────────────────────
 import { OceanConfig } from "./config";
-const { fft: fftCfg, ripple: rippleCfg } = OceanConfig;
+const { fft: fftCfg, ripple: rippleCfg, visuals: vis } = OceanConfig;
 // ─────────────────────────────────────────────────────────────────────────────
 
 (window as any).Effect_Index = Effect;
@@ -32,7 +33,7 @@ const engine  = new Engine(canvas, true);
 const scene   = new Scene(engine);
 
 const camera = new ArcRotateCamera("cam", Math.PI / 2, Math.PI / 3, 30, Vector3.Zero(), scene);
-camera.attachControl(canvas, true);
+// camera.attachControl(canvas, true);
 camera.setPosition(new Vector3(0, 8, -50));
 new HemisphericLight("light", new Vector3(0, 1, 0), scene);
 
@@ -76,7 +77,10 @@ const waterShader = new ShaderMaterial(
             "decayRate",
             "maxAge",
             "maxWaves",
-            "displacementScale",   
+            "displacementScale",  
+            "choppiness",
+            "skyBrightness", 
+            "dynamicSkyColor",
         ],
         samplers: ["waveTexture", "displacementMap"],
     }
@@ -92,6 +96,9 @@ waterShader.setFloat("maxAge",             rippleCfg.maxAge);
 // FFT displacement scale — replaces the magic * 8.0 in the old shader
 waterShader.setFloat("displacementScale",  fftCfg.displacementScale);
 
+// sliders control this
+waterShader.setFloat("choppiness", fftCfg.choppiness);
+waterShader.setFloat("skyBrightness", OceanConfig.visuals.skyBrightness);
 
 water.material = waterShader;
 
@@ -204,9 +211,36 @@ scene.onBeforeRenderObservable.add(() => {
             const yPixel = Math.max(0, Math.min(N - 1, Math.floor(v * N)));
 
             const pixelIdx = (yPixel * N + xPixel) * 4;
-            const realHeight = displacementBuffer![pixelIdx] * fftCfg.displacementScale;
+            const fftHeight = displacementBuffer![pixelIdx] * fftCfg.displacementScale;
 
-            p.position.y = realHeight - 1.0;
+            let rippleHeight = 0;
+            const TWO_PI = 6.2831853;
+
+            for (let i = 0; i < MAX_WAVES; i++) {
+                const spawnTime = waveData[i * 4 + 3];
+                if (spawnTime < 0.0) continue;
+
+                const age = time - spawnTime;
+                if (age <= 0.0 || age > rippleCfg.maxAge) continue;
+
+                const dx = p.position.x - waveData[i * 4 + 0];
+                const dz = p.position.z - waveData[i * 4 + 2];
+                const dist = Math.sqrt(dx * dx + dz * dz);
+
+                const waveFront = age * rippleCfg.speed;
+                const ringWidth = rippleCfg.speed * 2.0;
+
+                if (dist < waveFront + ringWidth && dist > waveFront - ringWidth) {
+                    const envelope = rippleCfg.amplitude * Math.exp(-age * rippleCfg.decayRate);
+                    const mask = Math.max(0, 1.0 - Math.abs(dist - waveFront) / ringWidth);
+                    rippleHeight += Math.sin((dist - waveFront) * rippleCfg.frequency * TWO_PI) * envelope * mask;
+                }
+            }
+            const depth = (p as any).mySubmersion || 1.3;
+
+            const targetHeight = fftHeight + rippleHeight - depth; // can change param based on penguin weight
+
+            p.position.y = p.position.y * 0.9 + targetHeight * 0.1;
             p.angle = Math.sin(time + p.position.x) * 0.1; // bobbing
         });
     }
@@ -249,24 +283,118 @@ const createButton = (text: string, mode: "penguin" | "wave") => {
 createButton("Place Penguin", "penguin");
 createButton("Create Wave",   "wave");
 
+const SPLASH_RATIO = 0.25;
+
 scene.onPointerDown = (evt, pickResult) => {
     if (!pickResult.hit || pickResult.pickedMesh?.name !== "water") return;
 
+    // wave also happens for penguin
+    const penCfg = OceanConfig.penguin;
+    const idx = nextWaveIndex;
+    const pos = pickResult.pickedPoint!;
+
+    waveData[idx * 4 + 0] = pos.x;
+    waveData[idx * 4 + 1] = rippleCfg.amplitude * (currentSize * SPLASH_RATIO);
+    waveData[idx * 4 + 2] = pos.z;
+    waveData[idx * 4 + 3] = (performance.now() - start) * 0.001;
+
+    waterShader.setFloat("waveAmplitude", rippleCfg.amplitude * penCfg.plopAmplitude);
+
+    nextWaveIndex = (nextWaveIndex + 1) % MAX_WAVES;
+    waveTexture.update(waveData);
+
     if (interactionMode === "penguin") {
-        const penguin    = new Sprite("penguin", penguinManager);
-        penguin.width    = 8.0;
-        penguin.height   = 8.0;
-        penguin.position = pickResult.pickedPoint!.clone();
+        const penguin = new Sprite("penguin", penguinManager);
+        penguin.width = currentSize;
+        penguin.height = currentSize;
+        penguin.position = pos.clone();
+        (penguin as any).mySubmersion = currentSubmersion;
         penguin.position.y += -12.0;
         console.log("Penguin deployed at:", penguin.position);
-    } else {
-        const idx = nextWaveIndex;
-        const pos = pickResult.pickedPoint!;
-        waveData[idx * 4 + 0] = pos.x;
-        waveData[idx * 4 + 1] = pos.y;
-        waveData[idx * 4 + 2] = pos.z;
-        waveData[idx * 4 + 3] = (performance.now() - start) * 0.001;
-        nextWaveIndex = (nextWaveIndex + 1) % MAX_WAVES;
-        waveTexture.update(waveData);
     }
 };
+
+const baseSkyColor = new Color4(0.7, 0.85, 1.0, 1.0);
+
+const createSlider = (text: string, min: number, max: number, initial: number, onChange: (v: number) => void) => {
+    const header = new GUI.TextBlock();
+    header.text = `${text}`;
+    header.height = "30px";
+    header.color = "white";
+    stackPanel.addControl(header);
+
+    const slider = new GUI.Slider();
+    slider.minimum = min;
+    slider.maximum = max;
+    slider.value = initial;
+    slider.height = "20px";
+    slider.width = "200px";
+    slider.onValueChangedObservable.add((value) => {
+        onChange(value);
+    });
+    stackPanel.addControl(slider);
+};
+
+// Choppiness Slider
+createSlider("Choppiness", 0, 2.0, fftCfg.choppiness, (v) => {
+    waterShader.setFloat("choppiness", v);
+});
+
+// Day/Night Sky Slider
+// createSlider("Sky Light", 0.1, 1.0, OceanConfig.visuals.skyBrightness, (v) => {
+//     waterShader.setFloat("skyBrightness", v);
+
+//     scene.clearColor = new Color4(
+//         baseSkyColor.r * v,
+//         baseSkyColor.g * v,
+//         baseSkyColor.b * v,
+//         1.0
+//     );
+// });
+const updateEnvironment = (v: number) => {
+    let finalColor: Color3;
+    const vis = OceanConfig.visuals;
+
+    if (v > 0.5) {
+        const t = (v - 0.5) * 2.0;
+        finalColor = Color3.Lerp(vis.sunsetColor, vis.noonColor, t);
+    } else {
+        const t = v * 2.0;
+        finalColor = Color3.Lerp(vis.nightColor, vis.sunsetColor, t);
+    }
+
+    waterShader.setVector3("dynamicSkyColor", new Vector3(finalColor.r, finalColor.g, finalColor.b));
+    scene.clearColor = new Color4(finalColor.r, finalColor.g, finalColor.b, 1.0);
+
+    const light = scene.getLightByName("light") as HemisphericLight;
+    if (light) {
+        light.diffuse = finalColor;
+        light.intensity = 0.2 + v * 0.8;
+    }
+};
+
+createSlider("Time of Day", 0, 1, OceanConfig.visuals.skyBrightness, (v) => {
+    updateEnvironment(v);
+});
+
+updateEnvironment(OceanConfig.visuals.skyBrightness);
+
+let currentSize = 8.0;
+let currentSubmersion = 1.3;
+
+createSlider("Penguin Scale", 2.0, 20.0, 8.0, (v) => {
+    const SUBMERSION_RATIO = 0.3; // toggle with these
+    const SPLASH_RATIO = 0.1; // toggle with these
+
+    // OceanConfig.penguin.size = v; 
+    // OceanConfig.penguin.submersion = v * SUBMERSION_RATIO;
+    currentSize = v;
+    currentSubmersion = v * SUBMERSION_RATIO;
+    
+    waterShader.setFloat("waveAmplitude", rippleCfg.amplitude * (v * SPLASH_RATIO));
+
+    // penguinManager.sprites.forEach(p => {
+    //     p.width = v;
+    //     p.height = v;
+    // });
+});
