@@ -28,9 +28,9 @@ const { fft: fftCfg, ripple: rippleCfg, visuals: vis } = OceanConfig;
 
 (window as any).Effect_Index = Effect;
 
-const canvas  = document.getElementById("renderCanvas") as HTMLCanvasElement;
-const engine  = new Engine(canvas, true);
-const scene   = new Scene(engine);
+const canvas = document.getElementById("renderCanvas") as HTMLCanvasElement;
+const engine = new Engine(canvas, true);
+const scene = new Scene(engine);
 
 const camera = new ArcRotateCamera("cam", Math.PI / 2, Math.PI / 3, 30, Vector3.Zero(), scene);
 // camera.attachControl(canvas, true);
@@ -43,8 +43,8 @@ new HemisphericLight("light", new Vector3(0, 1, 0), scene);
 const water = MeshBuilder.CreateGround(
     "water",
     {
-        width:        fftCfg.L,  
-        height:       fftCfg.L,   
+        width: fftCfg.L,
+        height: fftCfg.L,
         subdivisions: 200,
     },
     scene
@@ -54,7 +54,7 @@ water.alwaysSelectAsActiveMesh = true;
 // -----------------------------
 // Register shaders
 // -----------------------------
-Effect.ShadersStore["waterVertexShader"]   = waterVertex;
+Effect.ShadersStore["waterVertexShader"] = waterVertex;
 Effect.ShadersStore["waterFragmentShader"] = waterFragment;
 
 // -----------------------------
@@ -77,24 +77,24 @@ const waterShader = new ShaderMaterial(
             "decayRate",
             "maxAge",
             "maxWaves",
-            "displacementScale",  
+            "displacementScale",
             "choppiness",
-            "skyBrightness", 
+            "skyBrightness",
             "dynamicSkyColor",
         ],
-        samplers: ["waveTexture", "displacementMap"],
+        samplers: ["waveTexture", "displacementYDx", "displacementDz"],
     }
 );
 
 // Ripple uniforms from config
-waterShader.setFloat("waveSpeed",          rippleCfg.speed);
-waterShader.setFloat("waveFrequency",      rippleCfg.frequency);
-waterShader.setFloat("waveAmplitude",      rippleCfg.amplitude);
-waterShader.setFloat("decayRate",          rippleCfg.decayRate);
-waterShader.setFloat("maxAge",             rippleCfg.maxAge);
+waterShader.setFloat("waveSpeed", rippleCfg.speed);
+waterShader.setFloat("waveFrequency", rippleCfg.frequency);
+waterShader.setFloat("waveAmplitude", rippleCfg.amplitude);
+waterShader.setFloat("decayRate", rippleCfg.decayRate);
+waterShader.setFloat("maxAge", rippleCfg.maxAge);
 
 // FFT displacement scale — replaces the magic * 8.0 in the old shader
-waterShader.setFloat("displacementScale",  fftCfg.displacementScale);
+waterShader.setFloat("displacementScale", fftCfg.displacementScale);
 
 // sliders control this
 waterShader.setFloat("choppiness", fftCfg.choppiness);
@@ -106,7 +106,7 @@ water.material = waterShader;
 // Click-wave texture
 // -----------------------------
 const MAX_WAVES = 32;
-const waveData  = new Float32Array(MAX_WAVES * 4);
+const waveData = new Float32Array(MAX_WAVES * 4);
 for (let i = 0; i < MAX_WAVES; i++) {
     waveData[i * 4 + 3] = -1.0; // mark slot as inactive
 }
@@ -129,7 +129,7 @@ waterShader.setFloat("maxWaves", MAX_WAVES);
 const displacementData = generatePhillipsSpectrum(fftCfg);
 
 const nonZero = Array.from(displacementData).filter(v => Math.abs(v) > 0.001).length;
-const maxVal  = Math.max(...Array.from(displacementData).map(Math.abs));
+const maxVal = Math.max(...Array.from(displacementData).map(Math.abs));
 console.log(`[Phillips] Non-zero: ${nonZero} / ${displacementData.length}, max: ${maxVal}`);
 
 const h0Texture = new RawTexture(
@@ -144,10 +144,12 @@ const h0Texture = new RawTexture(
 // -----------------------------
 // GPU pipeline
 // -----------------------------
-const oceanFFT     = new OceanFFT(scene, h0Texture, fftCfg.N, fftCfg.L, /* autoRun= */ false);
-const butterflyPass = new ButterflyPass(scene, oceanFFT.displacementTexture, fftCfg.N, /* autoRun= */ false);
+const oceanFFT = new OceanFFT(scene, h0Texture, fftCfg.N, fftCfg.L, /* autoRun= */ false);
+const butterflyPassY = new ButterflyPass(scene, oceanFFT.spectrumMRT.textures[0], fftCfg.N, "fft_Y", /* autoRun= */ false);
+const butterflyPassZ = new ButterflyPass(scene, oceanFFT.spectrumMRT.textures[1], fftCfg.N, "fft_Z", /* autoRun= */ false);
 
-waterShader.setTexture("displacementMap", butterflyPass.displacementTexture);
+waterShader.setTexture("displacementYDx", butterflyPassY.displacementTexture);
+waterShader.setTexture("displacementDz", butterflyPassZ.displacementTexture);
 
 // -----------------------------
 // Debug readback (frame 240)
@@ -159,18 +161,41 @@ scene.onAfterRenderObservable.add(async () => {
     debugFrameCount++;
     if (debugFrameCount !== 240) return;
 
-    const N = fftCfg.N; // was a separate hard-coded `const N = 64`
+    // const byPixels = await butterflyPassY.displacementTexture.readPixels();
+    // const by = new Float32Array(byPixels!.buffer);
+    // const dyVals = Array.from({ length: 64 * 64 }, (_, i) => by[i * 4 + 0]);
+    // const dxVals = Array.from({ length: 64 * 64 }, (_, i) => by[i * 4 + 2]);
+    // console.log(`[Dy] max=${Math.max(...dyVals.map(Math.abs)).toFixed(4)}, mean=${(dyVals.reduce((a, b) => a + Math.abs(b), 0) / (64 * 64)).toFixed(4)}`);
+    // console.log(`[Dx] max=${Math.max(...dxVals.map(Math.abs)).toFixed(4)}, mean=${(dxVals.reduce((a, b) => a + Math.abs(b), 0) / (64 * 64)).toFixed(4)}`);
 
-    const fftPixels  = await oceanFFT.displacementTexture.readPixels(0, 0, undefined, false);
-    const fftFloats  = new Float32Array(fftPixels!.buffer);
-    const fftR       = Array.from({ length: N * N }, (_, i) => fftFloats[i * 4]);
-    console.log(`[OceanFFT] max=${Math.max(...fftR.map(Math.abs)).toFixed(4)}, nonZero=${fftR.filter(v => Math.abs(v) > 0.0001).length}/${N * N}`);
-
-    const bpPixels = await butterflyPass.displacementTexture.readPixels(0, 0, undefined, false);
-    const bpFloats = new Float32Array(bpPixels!.buffer);
-    const bpR      = Array.from({ length: N * N }, (_, i) => bpFloats[i * 4]);
-    console.log(`[Butterfly out] max=${Math.max(...bpR.map(Math.abs)).toFixed(4)}, nonZero=${bpR.filter(v => Math.abs(v) > 0.0001).length}/${N * N}`);
 });
+
+// scene.onAfterRenderObservable.add(async () => {
+//     debugFrameCount++;
+//     if (debugFrameCount !== 240) return;
+
+//     const N = fftCfg.N; // was a separate hard-coded `const N = 64`
+
+//     // const fftPixels = await oceanFFT.displacementTexture.readPixels(0, 0, undefined, false);
+//     // const fftFloats = new Float32Array(fftPixels!.buffer);
+//     // const fftR = Array.from({ length: N * N }, (_, i) => fftFloats[i * 4]);
+//     // console.log(`[OceanFFT] max=${Math.max(...fftR.map(Math.abs)).toFixed(4)}, nonZero=${fftR.filter(v => Math.abs(v) > 0.0001).length}/${N * N}`);
+
+//     // const bpPixels = await butterflyPass.displacementTexture.readPixels(0, 0, undefined, false);
+//     // const bpFloats = new Float32Array(bpPixels!.buffer);
+//     // const bpR = Array.from({ length: N * N }, (_, i) => bpFloats[i * 4]);
+
+//     // const height = Array.from({ length: N * N }, (_, i) => bpFloats[i * 4 + 0]);
+//     // const dx = Array.from({ length: N * N }, (_, i) => bpFloats[i * 4 + 1]);
+//     // const dz = Array.from({ length: N * N }, (_, i) => bpFloats[i * 4 + 2]);
+
+//     // console.log(
+//     //     `[MRT Ocean] height max=${Math.max(...height.map(Math.abs)).toFixed(4)}, ` +
+//     //     `dx max=${Math.max(...dx.map(Math.abs)).toFixed(4)}, ` +
+//     //     `dz max=${Math.max(...dz.map(Math.abs)).toFixed(4)}`
+//     // );
+//     // console.log(`[Butterfly out] max=${Math.max(...bpR.map(Math.abs)).toFixed(4)}, nonZero=${bpR.filter(v => Math.abs(v) > 0.0001).length}/${N * N}`);
+// });
 
 console.log("WebGL version:", engine.webGLVersion);
 
@@ -185,20 +210,21 @@ scene.onBeforeRenderObservable.add(() => {
 
     oceanFFT.update(time);
     oceanFFT.runPass();
-    butterflyPass.runPass();
+    butterflyPassY.runPass();
+    butterflyPassZ.runPass();
 
     if (!isFetching) {
         isFetching = true;
-        butterflyPass.getDisplacementData().then((data) => {
+        butterflyPassY.getDisplacementData().then((data) => {
             displacementBuffer = data;
             isFetching = false;
         });
     }
 
     waterShader.setVector3("vEyePosition", camera.position);
-
     waterShader.setFloat("time", time);
-    waterShader.setTexture("displacementMap", butterflyPass.displacementTexture);
+    waterShader.setTexture("displacementYDx", butterflyPassY.displacementTexture);
+    waterShader.setTexture("displacementDz", butterflyPassZ.displacementTexture);
 
     if (displacementBuffer != null) {
         const N = fftCfg.N;
@@ -211,7 +237,12 @@ scene.onBeforeRenderObservable.add(() => {
             const yPixel = Math.max(0, Math.min(N - 1, Math.floor(v * N)));
 
             const pixelIdx = (yPixel * N + xPixel) * 4;
-            const fftHeight = displacementBuffer![pixelIdx] * fftCfg.displacementScale;
+            // const fftHeight = displacementBuffer![pixelIdx] * fftCfg.displacementScale;
+            const i = pixelIdx;
+
+            const height = displacementBuffer![i + 0] * fftCfg.displacementScale;
+            // const dx = displacementBuffer![i + 1] * fftCfg.displacementScale * fftCfg.choppiness;
+            // const dz = displacementBuffer![i + 2] * fftCfg.displacementScale * fftCfg.choppiness;
 
             let rippleHeight = 0;
             const TWO_PI = 6.2831853;
@@ -238,7 +269,7 @@ scene.onBeforeRenderObservable.add(() => {
             }
             const depth = (p as any).mySubmersion || 1.3;
 
-            const targetHeight = fftHeight + rippleHeight - depth; // can change param based on penguin weight
+            const targetHeight = height + rippleHeight - depth; // can change param based on penguin weight
 
             p.position.y = p.position.y * 0.9 + targetHeight * 0.1;
             p.angle = Math.sin(time + p.position.x) * 0.1; // bobbing
@@ -263,16 +294,16 @@ const penguinManager = new SpriteManager(
 let interactionMode: "penguin" | "wave" = "penguin";
 
 const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-const stackPanel      = new GUI.StackPanel();
+const stackPanel = new GUI.StackPanel();
 stackPanel.width = "220px";
 stackPanel.horizontalAlignment = GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-stackPanel.verticalAlignment   = GUI.Control.VERTICAL_ALIGNMENT_TOP;
+stackPanel.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP;
 advancedTexture.addControl(stackPanel);
 
 const createButton = (text: string, mode: "penguin" | "wave") => {
     const btn = GUI.Button.CreateSimpleButton(mode, text);
-    btn.height     = "40px";
-    btn.color      = "white";
+    btn.height = "40px";
+    btn.color = "white";
     btn.background = "#2196F3";
     btn.onPointerUpObservable.add(() => {
         interactionMode = mode;
@@ -281,7 +312,7 @@ const createButton = (text: string, mode: "penguin" | "wave") => {
     stackPanel.addControl(btn);
 };
 createButton("Place Penguin", "penguin");
-createButton("Create Wave",   "wave");
+createButton("Create Wave", "wave");
 
 const SPLASH_RATIO = 0.25;
 
@@ -309,7 +340,7 @@ scene.onPointerDown = (evt, pickResult) => {
         penguin.height = currentSize;
         const placementPos = pos.clone();
         placementPos.x += (currentSize / 4);
-        
+
         penguin.position = placementPos;
         (penguin as any).mySubmersion = currentSubmersion;
         penguin.position.y += 0.0;
@@ -339,7 +370,7 @@ const createSlider = (text: string, min: number, max: number, initial: number, o
 };
 
 // Choppiness Slider
-createSlider("Choppiness", 0, 2.0, fftCfg.choppiness, (v) => {
+createSlider("Choppiness", 0, 20.0, fftCfg.choppiness, (v) => {
     waterShader.setFloat("choppiness", v);
 });
 
@@ -393,7 +424,7 @@ createSlider("Penguin Scale", 2.0, 20.0, 8.0, (v) => {
     // OceanConfig.penguin.submersion = v * SUBMERSION_RATIO;
     currentSize = v;
     currentSubmersion = v * SUBMERSION_RATIO;
-    
+
     waterShader.setFloat("waveAmplitude", rippleCfg.amplitude * (v * SPLASH_RATIO));
 
     // penguinManager.sprites.forEach(p => {

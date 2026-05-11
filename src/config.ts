@@ -3,15 +3,17 @@ import { Color3 } from "@babylonjs/core";
 // config.ts — single source of truth for all ocean parameters
 export const OceanConfig = {
     fft: {
-    N: 64,              // Increased for detail
-    L: 200,               // Slightly larger tile to let waves "breathe"
-    windSpeed: 8,        // Lowered to reduce "popcorn" chaos
-    windDirX: 1.0,
-    windDirZ: 0.2,       // Added a tiny bit of Z to break the "perfect row" look
-    amplitude: 10.0,      // SIGNIFICANTLY lower (Phillips energy scale)
-    displacementScale: 2.0, // Lowered to keep it from spiking
-    choppiness: 1.0,
-},
+        N: 64,              // Increased for detail
+        L: 200,               // Slightly larger tile to let waves "breathe"
+        windSpeed: 8,        // Lowered to reduce "popcorn" chaos
+        windDirX: 1.0,
+        windDirZ: 0.2,       // Added a tiny bit of Z to break the "perfect row" look
+        amplitude: 10.0,      // SIGNIFICANTLY lower (Phillips energy scale)
+        spreadExponent: 8,
+        spreadBlend: 0.85,
+        displacementScale: 2.0, // Lowered to keep it from spiking
+        choppiness: 5.0,
+    },
     ripple: {
         speed: 10.0,             // m/s
         frequency: 0.1,         // cycles/m
@@ -25,8 +27,8 @@ export const OceanConfig = {
         sunsetColor: new Color3(1.0, 0.65, 0.2),
         nightColor: new Color3(0.05, 0.05, 0.2),
     },
-    penguin:{
-        size : 8.0,
+    penguin: {
+        size: 8.0,
         submersion: 1.3,
         plopAmplitude: 2.0,
     }

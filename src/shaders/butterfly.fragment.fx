@@ -50,6 +50,6 @@ if (direction == 0) {
     // glFragColor = vec4(H.x, H.y, 0.0, 1.0);
     vec2 H_height = top.rg + complexMul(twiddle, bottom.rg);
     vec2 H_choppy = top.ba + complexMul(twiddle, bottom.ba);
-    glFragColor = vec4(H_height, H_choppy);
+    gl_FragColor = vec4(H_height, H_choppy);
     
 }

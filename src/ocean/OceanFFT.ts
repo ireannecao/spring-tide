@@ -4,6 +4,7 @@ import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { Effect } from "@babylonjs/core/Materials/effect";
 import { EffectRenderer, EffectWrapper } from "@babylonjs/core/Materials/effectRenderer";
+import { MultiRenderTarget } from "@babylonjs/core/Materials/Textures/multiRenderTarget";
 
 import timeEvolutionFrag from "../shaders/timeEvolution.fragment.fx";
 import { ShaderLanguage, Vector2 } from "@babylonjs/core";
@@ -13,7 +14,7 @@ const getShaderSource = (shader: any): string => {
 };
 
 export class OceanFFT {
-    public displacementTexture: RenderTargetTexture;
+    public spectrumMRT: MultiRenderTarget;
     private _effectRenderer: EffectRenderer;
     private _timeEvolutionEffect: EffectWrapper;
     private _h0Texture: RawTexture;
@@ -30,7 +31,7 @@ export class OceanFFT {
 
         const rawShader = (timeEvolutionFrag as any).default || timeEvolutionFrag;
         console.log("TimeEvolution Shader Content Type:", typeof rawShader);
-        
+
         if (typeof rawShader !== "string" || rawShader.length < 10) {
             console.error("FATAL: Shader content is not a valid string. Check Webpack config!");
         }
@@ -41,21 +42,27 @@ export class OceanFFT {
 
         const shaderSource = getShaderSource(timeEvolutionFrag);
 
-        this.displacementTexture = new RenderTargetTexture(
-            "hkt",
+        this.spectrumMRT = new MultiRenderTarget(
+            "oceanSpectrumMRT",
             { width: N, height: N },
+            2,
             scene,
             {
                 generateMipMaps: false,
-                type: Constants.TEXTURETYPE_FLOAT,
-                format: Constants.TEXTUREFORMAT_RGBA,
-                samplingMode: Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+                types: [
+                    Constants.TEXTURETYPE_FLOAT,
+                    Constants.TEXTURETYPE_FLOAT
+                ],
+                samplingModes: [
+                    Constants.TEXTURE_NEAREST_SAMPLINGMODE,
+                    Constants.TEXTURE_NEAREST_SAMPLINGMODE
+                ]
             }
         );
 
         this._effectRenderer = new EffectRenderer(engine);
-        
-       
+
+
 
         this._timeEvolutionEffect = new EffectWrapper({
             engine,
@@ -67,18 +74,18 @@ export class OceanFFT {
         });
 
         let checkCount = 0;
-scene.onBeforeRenderObservable.add(() => {
-    if (checkCount++ > 10) return;
-    const effect = this._timeEvolutionEffect.effect;
-    console.log(`[OceanFFT shader] isReady: ${effect.isReady()}, errors: ${effect.getCompilationError()}`);
-});
+        scene.onBeforeRenderObservable.add(() => {
+            if (checkCount++ > 10) return;
+            const effect = this._timeEvolutionEffect.effect;
+            console.log(`[OceanFFT shader] isReady: ${effect.isReady()}, errors: ${effect.getCompilationError()}`);
+        });
 
         this._timeEvolutionEffect.onApplyObservable.add(() => {
             const effect = this._timeEvolutionEffect.effect;
 
-    //         console.log("[OceanFFT apply] h0Texture isReady:", this._h0Texture.isReady());
-    // console.log("[OceanFFT apply] time:", this._time, "N:", this._N, "L:", this._L);
-    
+            //         console.log("[OceanFFT apply] h0Texture isReady:", this._h0Texture.isReady());
+            // console.log("[OceanFFT apply] time:", this._time, "N:", this._N, "L:", this._L);
+
             effect.setVector2("scale", new Vector2(1, 1));
             effect.setTexture("h0Texture", this._h0Texture);
             effect.setFloat("time", this._time);
@@ -91,16 +98,16 @@ scene.onBeforeRenderObservable.add(() => {
         }
     }
 
-    update(time: number) { this._time = time; }
+    update(time: number) { this._time = time % 1000.0; }
 
     public runPass() {
         if (!this._timeEvolutionEffect.effect.isReady()) return;
-        
+
         // console.log("[OceanFFT] About to render, RTT handle:", 
         //     (this.displacementTexture as any)._texture?._hardwareTexture?.underlyingResource);
-        
-        this._effectRenderer.render(this._timeEvolutionEffect, this.displacementTexture);
-        
+
+        this._effectRenderer.render(this._timeEvolutionEffect, this.spectrumMRT);
+
         // console.log("[OceanFFT] Render called");
     }
 }

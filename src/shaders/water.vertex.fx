@@ -7,7 +7,8 @@ uniform mat4 worldViewProjection;
 uniform mat4 world;
 uniform float time;
 
-uniform sampler2D displacementMap;
+uniform sampler2D displacementYDx;
+uniform sampler2D displacementDz;
 uniform sampler2D waveTexture;
 const int MAX_WAVES = 32;
 
@@ -34,18 +35,25 @@ varying vec3 vWorldPos;
 varying vec2 vUV;
 
 void main() {
+    vec3 base = position;
     vec3 p = position;
 
     // float fftDisplacement = textureLod(displacementMap, uv, 0.0).r;
     // p.y = fftDisplacement * displacementScale;
 
-    vec4 displacements = textureLod(displacementMap, uv, 0.0);
-    float dy = displacements.r * displacementScale;
-    float dxz = displacements.g * displacementScale * choppiness; // chopiness slider
+    // vec4 displacements = textureLod(displacementMap, uv, 0.0);
+    // out0: RG = Dy (height), BA = Dx (choppiness X)
+    vec4 ydx = textureLod(displacementYDx, uv, 0.0);
+    // out1: RG = Dz (choppiness Z)
+    vec4 dz_sample = textureLod(displacementDz, uv, 0.0);
+    float dy = ydx.r * displacementScale;
+    float dx = ydx.b * choppiness;  // BA channel = Dx real part
+    float dz = dz_sample.r * choppiness; // RG channel = Dz real part
+
+    p.x += dx;
+    p.z += dz;
 
     p.y = dy;
-    p.x += dxz; 
-    p.z += dxz;
 
     float ripple = 0.0;
     for (int i = 0; i < MAX_WAVES; i++) {
@@ -58,7 +66,7 @@ void main() {
         if (age <= 0.0 || age > maxAge) continue;
 
         vec3 wavePos = getWavePos(float(i));
-        float dist = distance(p.xz, wavePos.xz);
+        float dist = distance(base.xz, wavePos.xz);
 
         float maxRadius = maxAge * waveSpeed;
         if (dist > maxRadius) continue;

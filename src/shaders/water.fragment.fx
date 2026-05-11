@@ -1,7 +1,8 @@
 precision highp float;
 
 uniform vec3 vEyePosition;      // camera position
-uniform sampler2D displacementMap;
+uniform sampler2D displacementYDx;
+uniform sampler2D displacementDz;
 uniform float displacementScale;
 uniform float skyBrightness;
 uniform vec3 dynamicSkyColor;
@@ -46,10 +47,16 @@ float getRippleHeight(vec2 uv) {
 void main() {
   // find slope from neighbors
   float texelSize = 1.0 / 64.0;
-  float hL = texture2D(displacementMap, vUV + vec2(-texelSize, 0.0)).r;
-  float hR = texture2D(displacementMap, vUV + vec2(texelSize, 0.0)).r;
-  float hD = texture2D(displacementMap, vUV + vec2(0.0, -texelSize)).r;
-  float hU = texture2D(displacementMap, vUV + vec2(0.0, texelSize)).r;
+    // Use R channel (Dy) for normal estimation from displacementYDx
+    float hL = texture2D(displacementYDx, vUV + vec2(-texelSize, 0.0)).r;
+    float hR = texture2D(displacementYDx, vUV + vec2( texelSize, 0.0)).r;
+    float hD = texture2D(displacementYDx, vUV + vec2(0.0, -texelSize)).r;
+    float hU = texture2D(displacementYDx, vUV + vec2(0.0,  texelSize)).r;
+
+//   float hL = texture2D(displacementMap, vUV + vec2(-texelSize, 0.0)).r;
+//   float hR = texture2D(displacementMap, vUV + vec2(texelSize, 0.0)).r;
+//   float hD = texture2D(displacementMap, vUV + vec2(0.0, -texelSize)).r;
+//   float hU = texture2D(displacementMap, vUV + vec2(0.0, texelSize)).r;
 
   float rL = getRippleHeight(vUV + vec2(-texelSize, 0.0));
   float rR = getRippleHeight(vUV + vec2(texelSize, 0.0));

@@ -26,11 +26,21 @@ export interface SpectrumConfig {
     windDirX: number;    // normalized wind direction X
     windDirZ: number;    // normalized wind direction Z
     amplitude: number;   // overall scale
+    spreadExponent: number;
+    spreadBlend: number;
 }
 
 export function generatePhillipsSpectrum(cfg: SpectrumConfig): Float32Array {
-    const { N, L, windSpeed, windDirX, windDirZ, amplitude } = cfg;
+    const { N, L, windSpeed, windDirX, windDirZ, amplitude, spreadExponent, spreadBlend } = cfg;
     const g = 9.81;
+
+    const windLen = Math.sqrt(
+        windDirX * windDirX +
+        windDirZ * windDirZ
+    );
+
+    const wx = windDirX / windLen;
+    const wz = windDirZ / windLen;
 
     // L_phillips: largest possible wave 
     const windSpeedSq = windSpeed * windSpeed;
@@ -45,7 +55,7 @@ export function generatePhillipsSpectrum(cfg: SpectrumConfig): Float32Array {
             const kx = (TWO_PI / L) * (m - N / 2);
             const kz = (TWO_PI / L) * (n - N / 2);
             // wave number: small = large waves, large k = high frequency ripplea
-            const kLen = Math.sqrt(kx * kx + kz * kz); 
+            const kLen = Math.sqrt(kx * kx + kz * kz);
 
             const idx = (n * N + m) * 4;
 
@@ -58,15 +68,57 @@ export function generatePhillipsSpectrum(cfg: SpectrumConfig): Float32Array {
                 continue;
             }
 
+            const kxNorm = kx / kLen;
+            const kzNorm = kz / kLen;
+
+            const alignment =
+                kxNorm * wx +
+                kzNorm * wz;
+
             // Phillips spectrum: Ph(k) in equation 40
             const kLenSq = kLen * kLen;
             const kLenFour = kLenSq * kLenSq;
             const LpSq = Lp * Lp;
 
+            const swellFactor =
+                Math.exp(-1.0 / (kLen * Lp));
+
+            const localSpreadExponent =
+                2.0 +
+                cfg.spreadExponent * swellFactor;
+
+            const directionalSpread =
+                Math.pow(
+                    Math.abs(alignment),
+                    localSpreadExponent
+                );
+
+            const spread =
+                (1.0 - cfg.spreadBlend) +
+                directionalSpread * cfg.spreadBlend;
+
+            const smallWaveDamping = 0.02;
+
+            const lowCutoff =
+                Math.exp(-kLenSq * smallWaveDamping * smallWaveDamping);
+
+            const highCutoff =
+                Math.exp(-1.0 / (kLenSq * LpSq));
+
+            const againstWindSuppression =
+                alignment < 0.0 ? 0.25 : 1.0;
+
+            const capillarySuppress =
+                Math.exp(-kLenSq * kLenSq * 0.00002);
+
             const Ph = amplitude
                 * Math.exp(-1.0 / (kLenSq * LpSq))
+                * lowCutoff
+                * highCutoff
                 / kLenFour
-                * Math.pow((kx / kLen) * windDirX + (kz / kLen) * windDirZ, 2);
+                * spread
+                * againstWindSuppression
+                * capillarySuppress;
 
             const sqrtPh = Math.sqrt(Math.max(Ph, 0));
 
@@ -77,8 +129,8 @@ export function generatePhillipsSpectrum(cfg: SpectrumConfig): Float32Array {
 
             // h_0(-k) w new gaussian
             const [g2r, g2i] = gaussianRandom();
-            const h0mk_r =  (1 / Math.SQRT2) * g2r * sqrtPh;
-            const h0mk_i = -(1 / Math.SQRT2) * g2i * sqrtPh;  
+            const h0mk_r = (1 / Math.SQRT2) * g2r * sqrtPh;
+            const h0mk_i = -(1 / Math.SQRT2) * g2i * sqrtPh;
 
             // pack the real components at 
             data[idx + 0] = h0k_r;
