@@ -62,6 +62,8 @@ const sunMat = new StandardMaterial("sunMat", scene);
 sunMat.emissiveColor = new Color3(1.0, 0.9, 0.6);
 sunMat.disableLighting = true;
 sun.material = sunMat;
+sunMat.alphaMode = Constants.ALPHA_COMBINE;
+sunMat.transparencyMode = Material.MATERIAL_ALPHABLEND;
 
 const glowLayer = new GlowLayer("glow", scene);
 glowLayer.intensity = 0.8;
@@ -507,9 +509,33 @@ createSlider("Choppiness", 0, 20.0, fftCfg.choppiness, (v) => {
 //     );
 // });
 
+const sunCutoff = 0.6;
+
 const updateSun = (v: number) => {
+    let angle: number;
+    // remap: v=1 noon, v=0.3 horizon, v<0.3 stays at horizon
+    if (v >= 0.5) {
+        const remapped = Math.max(0, (v - sunCutoff) / (1 - sunCutoff));  // 0 at v=0.3, 1 at v=1
+        angle = remapped * Math.PI / 3;  // 0 at horizon, PI/2 at noon
+    } else {
+        if (v > 0.45) {
+
+            angle = 0;
+
+        } else {
+
+            // 0.4 -> 0 maps to 0 -> 1
+            const remapped = (0.45 - v) / 0.45;
+
+            angle = remapped * Math.PI / 3;
+        }
+        // const remapped = 1 - v / sunCutoff;
+        // angle = remapped * Math.PI / 3;
+
+    }
+
     // v=1 noon (high), v=0.5 horizon, v=0 below horizon (night)
-    const angle = Math.abs((v - 0.5) * Math.PI * 2 / 3);  // -PI/2 to PI/2
+    // const angle = Math.abs((v - 0.5) * Math.PI * 2 / 3);  // -PI/2 to PI/2
     const height = Math.sin(angle);      // -1 to 1
     const depth = Math.cos(angle);      // 1 at horizon, 0 at noon/night
 
@@ -520,37 +546,58 @@ const updateSun = (v: number) => {
     const dir = sunPos.negate().normalize();
     sunLight.direction = dir;
     sunLight.position = sunPos;
-    sunLight.intensity = Math.max(0, height) * 2.5;
+    // sunLight.intensity = Math.max(0, height) * 2.5;
+    if (v >= 0) {
+        sunLight.intensity = Math.max(0, height) * 2.5;
+    } else {
+        sunLight.intensity = Math.pow(Math.abs(v), 2.0) * 0.3;
+    }
 
     waterShader.setVector3("sunDirection", new Vector3(dir.x, dir.y, dir.z));
 
-    if (v > 0.5) {
+    if (v > sunCutoff) {
         // sun — full size, warm yellow
         sun.scaling = new Vector3(1.0, 1.0, 1.0);
-    } else {
+    } else if (v < 0.5) {
         // moon — smaller, pale blue-white
+        // sun.scaling = new Vector3(1.0, 1.0, 1.0);
         sun.scaling = new Vector3(0.75, 0.75, 0.75);
     }
-    const glowIntensity = v > 0.5
-        ? 0.5 + (1.0 - (v - 0.5) * 2.0) * 0.8  // noon=0.5, sunset=1.3
-        : v * 2.0 * 0.4;                          // night=0, sunset=0.8
-    glowLayer.intensity = glowIntensity;
+    // const glowIntensity = v > sunCutoff
+    //     ? 0.5 + (1.0 - (v - 0.5) * 2.0) * 0.8  // noon=0.5, sunset=1.3
+    //     : v * 2.0 * 0.4;                          // night=0, sunset=0.8
+
 };
 
 const updateEnvironment = (v: number) => {
     let finalColor: Color3;
     let sunColor: Color3;
+    let sunAlpha = 1.0;
     const vis = OceanConfig.visuals;
 
-    if (v > 0.5) {
-        const t = (v - 0.5) * 2.0;
+    if (v > sunCutoff) {
+        const t = (v - sunCutoff) / (1 - sunCutoff);
         finalColor = Color3.Lerp(vis.sunsetColor, vis.noonColor, t);
         sunColor = finalColor;
-    } else {
-        const t = v * 2.0;
+        sunAlpha = 1.0;
+    } else if (v > 0.5) {
+        const t = (v - 0.5) / (sunCutoff - 0.5);
         finalColor = Color3.Lerp(vis.nightColor, vis.sunsetColor, t);
+        sunColor = vis.sunsetColor;
+        sunAlpha = Math.pow(t, 2.0);
+    } else {
+        finalColor = vis.nightColor;
         sunColor = vis.moonColor;
+        const t = Math.max(0.0, Math.min(1.0, (0.5 - v) / (sunCutoff - 0.5))
+        );
+        sunAlpha = Math.pow(t, 4.0);
     }
+    sunMat.alpha = sunAlpha;
+    // const glowIntensity =
+    //     v > sunCutoff
+    //         ? 0.5 + (1.0 - (v - 0.5) * 2.0) * 0.8
+    //         : Math.pow(v, 4.0) * 20.0;
+    glowLayer.intensity = sunAlpha;
 
     scene.fogColor = new Color3(finalColor.r, finalColor.g, finalColor.b);
 
@@ -566,28 +613,50 @@ const updateEnvironment = (v: number) => {
 
     updateSun(v);
 
-    sunMat.emissiveColor = new Color3(
-        Math.min(1.0, sunColor.r * 1.3),
-        Math.min(1.0, sunColor.g * 1.1),
-        Math.min(1.0, sunColor.b * 0.8)
+    let finalSunColor: Color3;
+    if (v >= 0.5) {
+        finalSunColor = new Color3(
+            Math.min(1.0, sunColor.r * 1.3),
+            Math.min(1.0, sunColor.g * 1.1),
+            Math.min(1.0, sunColor.b * 0.8)
+        )
+    } else {
+        finalSunColor = sunColor;
+    }
+    finalSunColor = finalSunColor.scale(sunAlpha)
+
+    sunMat.emissiveColor = finalSunColor;
+
+    sunLight.diffuse = finalSunColor;
+    sunLight.specular = finalSunColor;
+
+    waterShader.setVector3(
+        "sunColor",
+        new Vector3(finalSunColor.r, finalSunColor.g, finalSunColor.b)
     );
 
-    sunLight.diffuse = new Color3(
-        Math.min(1.0, sunColor.r * 1.3),
-        Math.min(1.0, sunColor.g * 1.1),
-        Math.min(1.0, sunColor.b * 0.8)
-    );
-    sunLight.specular = new Color3(
-        Math.min(1.0, sunColor.r * 1.3),
-        Math.min(1.0, sunColor.g * 1.1),
-        Math.min(1.0, sunColor.b * 0.8)
-    );
+    // sunMat.emissiveColor = new Color3(
+    //     Math.min(1.0, sunColor.r * 1.3),
+    //     Math.min(1.0, sunColor.g * 1.1),
+    //     Math.min(1.0, sunColor.b * 0.8)
+    // ).scale(sunAlpha);
 
-    waterShader.setVector3("sunColor", new Vector3(
-        Math.min(1.0, sunColor.r * 1.3),
-        Math.min(1.0, sunColor.g * 1.1),
-        Math.min(1.0, sunColor.b * 0.8)
-    ));
+    // sunLight.diffuse = new Color3(
+    //     Math.min(1.0, sunColor.r * 1.3),
+    //     Math.min(1.0, sunColor.g * 1.1),
+    //     Math.min(1.0, sunColor.b * 0.8)
+    // ).scale(sunAlpha);
+    // sunLight.specular = new Color3(
+    //     Math.min(1.0, sunColor.r * 1.3),
+    //     Math.min(1.0, sunColor.g * 1.1),
+    //     Math.min(1.0, sunColor.b * 0.8)
+    // ).scale(sunAlpha);
+
+    // waterShader.setVector3("sunColor", new Vector3(
+    //     Math.min(1.0, sunColor.r * 1.3),
+    //     Math.min(1.0, sunColor.g * 1.1),
+    //     Math.min(1.0, sunColor.b * 0.8)
+    // ).scale(sunAlpha));
 };
 
 createSlider("Time of Day", 0, 1, OceanConfig.visuals.skyBrightness, (v) => {
