@@ -36,7 +36,7 @@ const engine = new Engine(canvas, true);
 const scene = new Scene(engine);
 
 const camera = new ArcRotateCamera("cam", Math.PI / 2, Math.PI / 3, 30, Vector3.Zero(), scene);
-camera.attachControl(canvas, true);
+// camera.attachControl(canvas, true);
 camera.setPosition(new Vector3(0, 1, -50));
 const hemiLight = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
 
@@ -450,7 +450,7 @@ scene.onPointerDown = (evt, pickResult) => {
     waveData[idx * 4 + 0] = pos.x;
     waveData[idx * 4 + 1] = rippleCfg.amplitude * (currentSize * SPLASH_RATIO);
     waveData[idx * 4 + 2] = pos.z;
-    waveData[idx * 4 + 3] = (performance.now() - start) * 0.001;
+    waveData[idx * 4 + 3] = (performance.now() - start) * 0.002;
 
     // waterShader.setFloat("waveAmplitude", rippleCfg.amplitude * penCfg.plopAmplitude);
 
@@ -493,7 +493,7 @@ const createSlider = (text: string, min: number, max: number, initial: number, o
 };
 
 // Choppiness Slider
-createSlider("Choppiness", 0, 20.0, fftCfg.choppiness, (v) => {
+createSlider("Choppiness", 0, 100.0, fftCfg.choppiness, (v) => {
     waterShader.setFloat("choppiness", v);
 });
 
