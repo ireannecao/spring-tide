@@ -26,6 +26,7 @@ export const OceanConfig = {
         noonColor: new Color3(0.7, 0.85, 1.0),
         sunsetColor: new Color3(1.0, 0.65, 0.2),
         nightColor: new Color3(0.05, 0.05, 0.2),
+        moonColor: new Color3(0.6, 0.65, 0.8),
     },
     penguin: {
         size: 8.0,

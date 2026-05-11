@@ -4,7 +4,7 @@ import { Scene } from "@babylonjs/core/scene";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
-import { DirectionalLight } from "@babylonjs/core";
+import { DirectionalLight, GlowLayer } from "@babylonjs/core";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
@@ -42,13 +42,12 @@ const hemiLight = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
 
 const sunLight = new DirectionalLight(
     "sunLight",
-    new Vector3(0.0, -0.2, -1.0),
+    new Vector3(0, -1, 0),
     scene
 );
 
-sunLight.position = new Vector3(0, 40, -120);
+// sunLight.position = new Vector3(0, 40, -120);
 sunLight.intensity = 2.5;
-
 sunLight.diffuse = new Color3(1.0, 0.95, 0.8);
 sunLight.specular = new Color3(1.0, 0.95, 0.85);
 
@@ -57,14 +56,17 @@ const sun = MeshBuilder.CreateSphere(
     { diameter: 12 },
     scene
 );
-
-sun.position = new Vector3(0, 35, 140);
+// sun.position = new Vector3(0, 35, 140);
 
 const sunMat = new StandardMaterial("sunMat", scene);
 sunMat.emissiveColor = new Color3(1.0, 0.9, 0.6);
 sunMat.disableLighting = true;
-
 sun.material = sunMat;
+
+const glowLayer = new GlowLayer("glow", scene);
+glowLayer.intensity = 0.8;
+glowLayer.addIncludedOnlyMesh(sun);
+glowLayer.renderingGroupId = 0;
 
 // -----------------------------
 // Geometry — L drives mesh size
@@ -79,6 +81,7 @@ const water = MeshBuilder.CreateGround(
     scene
 );
 water.alwaysSelectAsActiveMesh = true;
+water.renderingGroupId = 1;
 
 // -----------------------------
 // Register shaders
@@ -118,6 +121,7 @@ const waterShader = new ShaderMaterial(
             "N",
             "sunDirection",
             "sunColor",
+            "sssStrength",
         ],
         samplers: ["waveTexture", "displacementYDx", "displacementDz", "foamTexture", "foamAccumTexture"],
     }
@@ -149,6 +153,7 @@ waterShader.setFloat("depthFalloff", 0.8);
 waterShader.setVector3("shallowColor", new Vector3(0.03, 0.12, 0.2)); //(0.2, 0.5, 0.8)
 waterShader.setVector3("deepColor", new Vector3(0.0, 0.02, 0.05)); //(0.0, 0.2, 0.5)
 // comments are from the original values in fragment shader
+waterShader.setFloat("sssStrength", 5.0);
 
 // sliders control this
 waterShader.setFloat("choppiness", fftCfg.choppiness);
@@ -167,17 +172,24 @@ waterShader.setVector3(
 water.material = waterShader;
 
 const seabed = MeshBuilder.CreateGround("seabed", {
-    width: fftCfg.L,
-    height: fftCfg.L,
+    width: fftCfg.L * 20,
+    height: fftCfg.L * 20,
 }, scene);
-seabed.position.y = -20.0;
+seabed.position.y = -10.0;
 
 const seabedMat = new StandardMaterial("seabedMat", scene);
 const seabedTex = new Texture("assets/ground.png", scene);  // your image path
-seabedTex.uScale = 10;  // tile 10x horizontally
-seabedTex.vScale = 10;  // tile 10x vertically
+seabedTex.uScale = 100;  // tile 10x horizontally
+seabedTex.vScale = 100;  // tile 10x vertically
 seabedMat.diffuseTexture = seabedTex;
 seabed.material = seabedMat;
+
+scene.fogMode = Scene.FOGMODE_EXP2;
+scene.fogDensity = 0.008;
+seabed.applyFog = true;
+water.applyFog = false;
+sun.applyFog = false;
+
 
 // const seabedMat = new StandardMaterial("seabedMat", scene);
 // // seabedMat.diffuseColor = new Color3(0.8, 0.7, 0.5); // sandy color
@@ -313,7 +325,7 @@ let displacementBuffer: Float32Array | null = null;
 let isFetching = false;
 
 scene.onBeforeRenderObservable.add(() => {
-    const time = (performance.now() - start) * 0.0015;
+    const time = (performance.now() - start) * 0.002;
 
     oceanFFT.update(time);
     oceanFFT.runPass();
@@ -494,17 +506,53 @@ createSlider("Choppiness", 0, 20.0, fftCfg.choppiness, (v) => {
 //         1.0
 //     );
 // });
+
+const updateSun = (v: number) => {
+    // v=1 noon (high), v=0.5 horizon, v=0 below horizon (night)
+    const angle = Math.abs((v - 0.5) * Math.PI * 2 / 3);  // -PI/2 to PI/2
+    const height = Math.sin(angle);      // -1 to 1
+    const depth = Math.cos(angle);      // 1 at horizon, 0 at noon/night
+
+    const sunPos = new Vector3(0, height * 60 - 10, depth * 140);
+    sun.position = sunPos;
+
+    // light comes FROM sun position, points toward origin
+    const dir = sunPos.negate().normalize();
+    sunLight.direction = dir;
+    sunLight.position = sunPos;
+    sunLight.intensity = Math.max(0, height) * 2.5;
+
+    waterShader.setVector3("sunDirection", new Vector3(dir.x, dir.y, dir.z));
+
+    if (v > 0.5) {
+        // sun — full size, warm yellow
+        sun.scaling = new Vector3(1.0, 1.0, 1.0);
+    } else {
+        // moon — smaller, pale blue-white
+        sun.scaling = new Vector3(0.75, 0.75, 0.75);
+    }
+    const glowIntensity = v > 0.5
+        ? 0.5 + (1.0 - (v - 0.5) * 2.0) * 0.8  // noon=0.5, sunset=1.3
+        : v * 2.0 * 0.4;                          // night=0, sunset=0.8
+    glowLayer.intensity = glowIntensity;
+};
+
 const updateEnvironment = (v: number) => {
     let finalColor: Color3;
+    let sunColor: Color3;
     const vis = OceanConfig.visuals;
 
     if (v > 0.5) {
         const t = (v - 0.5) * 2.0;
         finalColor = Color3.Lerp(vis.sunsetColor, vis.noonColor, t);
+        sunColor = finalColor;
     } else {
         const t = v * 2.0;
         finalColor = Color3.Lerp(vis.nightColor, vis.sunsetColor, t);
+        sunColor = vis.moonColor;
     }
+
+    scene.fogColor = new Color3(finalColor.r, finalColor.g, finalColor.b);
 
     waterShader.setVector3("dynamicSkyColor", new Vector3(finalColor.r, finalColor.g, finalColor.b));
     waterShader.setFloat("lightIntensity", 0.2 + v * 0.8);  // same as light.intensity
@@ -515,6 +563,31 @@ const updateEnvironment = (v: number) => {
         hemiLight.diffuse = finalColor;
         hemiLight.intensity = 0.2 + v * 0.8;
     }
+
+    updateSun(v);
+
+    sunMat.emissiveColor = new Color3(
+        Math.min(1.0, sunColor.r * 1.3),
+        Math.min(1.0, sunColor.g * 1.1),
+        Math.min(1.0, sunColor.b * 0.8)
+    );
+
+    sunLight.diffuse = new Color3(
+        Math.min(1.0, sunColor.r * 1.3),
+        Math.min(1.0, sunColor.g * 1.1),
+        Math.min(1.0, sunColor.b * 0.8)
+    );
+    sunLight.specular = new Color3(
+        Math.min(1.0, sunColor.r * 1.3),
+        Math.min(1.0, sunColor.g * 1.1),
+        Math.min(1.0, sunColor.b * 0.8)
+    );
+
+    waterShader.setVector3("sunColor", new Vector3(
+        Math.min(1.0, sunColor.r * 1.3),
+        Math.min(1.0, sunColor.g * 1.1),
+        Math.min(1.0, sunColor.b * 0.8)
+    ));
 };
 
 createSlider("Time of Day", 0, 1, OceanConfig.visuals.skyBrightness, (v) => {

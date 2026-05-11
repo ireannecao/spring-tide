@@ -26,6 +26,7 @@ uniform vec3 shallowColor;     // e.g. vec3(0.1, 0.6, 0.5) — teal
 uniform vec3 deepColor;        // e.g. vec3(0.0, 0.1, 0.3) — dark blue
 uniform float depthFalloff;    // how quickly it goes opaque, e.g. 0.1
 uniform float lightIntensity;
+uniform float sssStrength;
 
 uniform sampler2D foamAccumTexture;
 uniform sampler2D foamTexture;  // visual foam texture
@@ -101,10 +102,17 @@ float depthAlpha = 1.0 - exp(-effectiveDepth * depthFalloff);
 
 // specular
     vec3 lightDir = normalize(-sunDirection);
+    // sun is low = grazing angle = long specular streak
+float horizonFactor = abs(sunDirection.z);  // 0 at noon, 1 at horizon
+float specPower = mix(512.0, 64.0, horizonFactor);  // sharp at noon, broad at sunset
+float specIntensity = mix(0.6, 2.0, horizonFactor); // dim at noon, bright streak at sunset
+// float sunAboveHorizon = smoothstep(0.0, 0.05, -sunDirection.y + 0.05); 
+float sunHorizonOffset = -10.0 / 60.0;
+float sunVisibility = smoothstep(-sunHorizonOffset, -sunHorizonOffset - 0.04, sunDirection.y);
 vec3 halfVec = normalize(lightDir + viewDir);
-float spec = pow(max(dot(normal, halfVec), 0.0), 180.0); // very sharp, was 64
+float spec = pow(max(dot(normal, halfVec), 0.0), specPower);
 float slopeMask = smoothstep(0.1, 0.4, length(vec2(dX, dZ)));
-vec3 specular = vec3(1.0) * spec * 2.0 * slopeMask;
+vec3 specular = sunColor * spec * specIntensity * slopeMask * sunVisibility;
 
 // vec3 specular = vec3(1.0) * spec * 1.5;  // bright white
   
@@ -112,7 +120,27 @@ vec3 specular = vec3(1.0) * spec * 2.0 * slopeMask;
 
   // vec3 skyColor = vec3(0.7, 0.85, 1.0) * skyBrightness; // day -> night interaction
 
-    vec3 finalColor = mix(refractedColor, dynamicSkyColor, fresnel) + specular;
+  // Subsurface scattering
+// vec3 lightDir = normalize(vec3(0.5, 1.0, 0.3));  // same as your specular lightDir
+
+// how much the wave crest is facing away from light (backlit)
+float sssBase = max(0.0, dot(-normal, lightDir));
+
+// stronger at crests and steep slopes
+float sssMask = smoothstep(0.3, 1.0, normalizedHeight) * 
+                smoothstep(0.0, 0.3, length(vec2(dX, dZ)));
+
+// thin wave tips let more light through
+float thickness = 1.0 - smoothstep(0.5, 1.0, normalizedHeight);
+
+float sss = sssBase * sssMask * (1.0 - thickness * 0.5) * sunVisibility;
+
+// SSS color — warm turquoise, brighter than water body
+vec3 scatterColor = vec3(0.0, 0.5, 0.4);
+vec3 sssColor = sunColor * scatterColor * lightIntensity * 2.0;
+vec3 finalColor = mix(refractedColor, dynamicSkyColor, fresnel) + specular + sss * sssColor * sssStrength;
+
+    // vec3 finalColor = mix(refractedColor, dynamicSkyColor, fresnel) + specular;
     float alpha = mix(depthAlpha * 0.85, 1.0, fresnel);
 //   vec3 waterBase = mix(deep, shallow, vHeight * 0.5 + 0.5);
 //   vec3 finalColor = mix(waterBase, dynamicSkyColor, fresnel);
