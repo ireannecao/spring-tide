@@ -1,8 +1,10 @@
 import { Engine } from "@babylonjs/core/Engines/engine";
+import { WebGPUEngine } from "@babylonjs/core/Engines/webgpuEngine";
 import { Scene } from "@babylonjs/core/scene";
 import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
+import { DirectionalLight } from "@babylonjs/core";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { ShaderMaterial } from "@babylonjs/core/Materials/shaderMaterial";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
@@ -16,9 +18,10 @@ import { Sprite } from "@babylonjs/core/Sprites/sprite";
 import { generatePhillipsSpectrum } from "./ocean/PhillipsSpectrum";
 import { OceanFFT } from "./ocean/OceanFFT";
 import { ButterflyPass } from "./ocean/ButterflyPass";
+import { FoamPass } from "./ocean/FoamPass";
 import "@babylonjs/core/Materials/standardMaterial";
 import "@babylonjs/core/Culling/ray";
-import { Color3, Color4 } from "@babylonjs/core";
+import { Color3, Color4, Material, StandardMaterial, Tools } from "@babylonjs/core";
 import * as GUI from "@babylonjs/gui/2D";
 
 // ─── Single source of truth ───────────────────────────────────────────────────
@@ -33,9 +36,35 @@ const engine = new Engine(canvas, true);
 const scene = new Scene(engine);
 
 const camera = new ArcRotateCamera("cam", Math.PI / 2, Math.PI / 3, 30, Vector3.Zero(), scene);
-// camera.attachControl(canvas, true);
-camera.setPosition(new Vector3(0, 8, -50));
-new HemisphericLight("light", new Vector3(0, 1, 0), scene);
+camera.attachControl(canvas, true);
+camera.setPosition(new Vector3(0, 1, -50));
+const hemiLight = new HemisphericLight("light", new Vector3(0, 1, 0), scene);
+
+const sunLight = new DirectionalLight(
+    "sunLight",
+    new Vector3(0.0, -0.2, -1.0),
+    scene
+);
+
+sunLight.position = new Vector3(0, 40, -120);
+sunLight.intensity = 2.5;
+
+sunLight.diffuse = new Color3(1.0, 0.95, 0.8);
+sunLight.specular = new Color3(1.0, 0.95, 0.85);
+
+const sun = MeshBuilder.CreateSphere(
+    "sun",
+    { diameter: 12 },
+    scene
+);
+
+sun.position = new Vector3(0, 35, 140);
+
+const sunMat = new StandardMaterial("sunMat", scene);
+sunMat.emissiveColor = new Color3(1.0, 0.9, 0.6);
+sunMat.disableLighting = true;
+
+sun.material = sunMat;
 
 // -----------------------------
 // Geometry — L drives mesh size
@@ -45,7 +74,7 @@ const water = MeshBuilder.CreateGround(
     {
         width: fftCfg.L,
         height: fftCfg.L,
-        subdivisions: 200,
+        subdivisions: fftCfg.N,
     },
     scene
 );
@@ -81,10 +110,25 @@ const waterShader = new ShaderMaterial(
             "choppiness",
             "skyBrightness",
             "dynamicSkyColor",
+            "waterDepth",
+            "depthFalloff",
+            "shallowColor",
+            "deepColor",
+            "lightIntensity",
+            "N",
+            "sunDirection",
+            "sunColor",
         ],
-        samplers: ["waveTexture", "displacementYDx", "displacementDz"],
+        samplers: ["waveTexture", "displacementYDx", "displacementDz", "foamTexture", "foamAccumTexture"],
     }
 );
+waterShader.alphaMode = Constants.ALPHA_COMBINE;
+waterShader.transparencyMode = Material.MATERIAL_ALPHABLEND;
+
+water.hasVertexAlpha = false;
+// waterShader.needDepthPrePass = true;
+waterShader.alpha = 1.0;
+
 
 // Ripple uniforms from config
 waterShader.setFloat("waveSpeed", rippleCfg.speed);
@@ -93,14 +137,58 @@ waterShader.setFloat("waveAmplitude", rippleCfg.amplitude);
 waterShader.setFloat("decayRate", rippleCfg.decayRate);
 waterShader.setFloat("maxAge", rippleCfg.maxAge);
 
+waterShader.setFloat("N", fftCfg.N);
+// waterShader.setFloat("choppiness", fftCfg.choppiness)
+
 // FFT displacement scale — replaces the magic * 8.0 in the old shader
 waterShader.setFloat("displacementScale", fftCfg.displacementScale);
+
+// Transparency
+waterShader.setFloat("waterDepth", 15.0);
+waterShader.setFloat("depthFalloff", 0.8);
+waterShader.setVector3("shallowColor", new Vector3(0.03, 0.12, 0.2)); //(0.2, 0.5, 0.8)
+waterShader.setVector3("deepColor", new Vector3(0.0, 0.02, 0.05)); //(0.0, 0.2, 0.5)
+// comments are from the original values in fragment shader
 
 // sliders control this
 waterShader.setFloat("choppiness", fftCfg.choppiness);
 waterShader.setFloat("skyBrightness", OceanConfig.visuals.skyBrightness);
 
+waterShader.setVector3(
+    "sunDirection",
+    sunLight.direction.normalize()
+);
+
+waterShader.setVector3(
+    "sunColor",
+    new Vector3(1.0, 0.95, 0.85)
+);
+
 water.material = waterShader;
+
+const seabed = MeshBuilder.CreateGround("seabed", {
+    width: fftCfg.L,
+    height: fftCfg.L,
+}, scene);
+seabed.position.y = -20.0;
+
+const seabedMat = new StandardMaterial("seabedMat", scene);
+const seabedTex = new Texture("assets/ground.png", scene);  // your image path
+seabedTex.uScale = 10;  // tile 10x horizontally
+seabedTex.vScale = 10;  // tile 10x vertically
+seabedMat.diffuseTexture = seabedTex;
+seabed.material = seabedMat;
+
+// const seabedMat = new StandardMaterial("seabedMat", scene);
+// // seabedMat.diffuseColor = new Color3(0.8, 0.7, 0.5); // sandy color
+// seabedMat.diffuseColor = new Color3(0.0, 0.05, 0.1);  // near black, was sandy
+// seabed.material = seabedMat;
+
+// seabed.renderingGroupId = 0;
+// water.renderingGroupId = 1;
+
+const foamTex = new Texture("https://assets.babylonjs.com/environments/waterFoam_circular_mask.png", scene);
+waterShader.setTexture("foamTexture", foamTex);
 
 // -----------------------------
 // Click-wave texture
@@ -128,9 +216,17 @@ waterShader.setFloat("maxWaves", MAX_WAVES);
 // -----------------------------
 const displacementData = generatePhillipsSpectrum(fftCfg);
 
-const nonZero = Array.from(displacementData).filter(v => Math.abs(v) > 0.001).length;
-const maxVal = Math.max(...Array.from(displacementData).map(Math.abs));
-console.log(`[Phillips] Non-zero: ${nonZero} / ${displacementData.length}, max: ${maxVal}`);
+// const nonZero = Array.from(displacementData).filter(v => Math.abs(v) > 0.001).length;
+// const maxVal = Math.max(...Array.from(displacementData).map(Math.abs));
+let nonZero = 0;
+let maxVal = 0;
+for (let i = 0; i < displacementData.length; i++) {
+    const abs = Math.abs(displacementData[i]);
+    if (abs > 0.001) nonZero++;
+    if (abs > maxVal) maxVal = abs;
+}
+
+// console.log(`[Phillips] Non-zero: ${nonZero} / ${displacementData.length}, max: ${maxVal}`);
 
 const h0Texture = new RawTexture(
     displacementData,
@@ -151,6 +247,16 @@ const butterflyPassZ = new ButterflyPass(scene, oceanFFT.spectrumMRT.textures[1]
 waterShader.setTexture("displacementYDx", butterflyPassY.displacementTexture);
 waterShader.setTexture("displacementDz", butterflyPassZ.displacementTexture);
 
+const foamPass = new FoamPass(
+    scene,
+    fftCfg.N,
+    butterflyPassY.displacementTexture,
+    butterflyPassZ.displacementTexture,
+    false
+);
+
+waterShader.setTexture("foamAccumTexture", foamPass.foamTexture);
+
 // -----------------------------
 // Debug readback (frame 240)
 // -----------------------------
@@ -159,7 +265,8 @@ let debugFrameCount = 0;
 
 scene.onAfterRenderObservable.add(async () => {
     debugFrameCount++;
-    if (debugFrameCount !== 240) return;
+    if (debugFrameCount % 40 !== 0) return;
+
 
     // const byPixels = await butterflyPassY.displacementTexture.readPixels();
     // const by = new Float32Array(byPixels!.buffer);
@@ -206,12 +313,14 @@ let displacementBuffer: Float32Array | null = null;
 let isFetching = false;
 
 scene.onBeforeRenderObservable.add(() => {
-    const time = (performance.now() - start) * 0.001;
+    const time = (performance.now() - start) * 0.0015;
 
     oceanFFT.update(time);
     oceanFFT.runPass();
     butterflyPassY.runPass();
     butterflyPassZ.runPass();
+    foamPass.runPass();
+    waterShader.setTexture("foamAccumTexture", foamPass.foamTexture);
 
     if (!isFetching) {
         isFetching = true;
@@ -291,7 +400,7 @@ const penguinManager = new SpriteManager(
     scene
 );
 
-let interactionMode: "penguin" | "wave" = "penguin";
+let interactionMode: "penguin" | "wave" = "wave";
 
 const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
 const stackPanel = new GUI.StackPanel();
@@ -398,12 +507,13 @@ const updateEnvironment = (v: number) => {
     }
 
     waterShader.setVector3("dynamicSkyColor", new Vector3(finalColor.r, finalColor.g, finalColor.b));
+    waterShader.setFloat("lightIntensity", 0.2 + v * 0.8);  // same as light.intensity
     scene.clearColor = new Color4(finalColor.r, finalColor.g, finalColor.b, 1.0);
 
-    const light = scene.getLightByName("light") as HemisphericLight;
-    if (light) {
-        light.diffuse = finalColor;
-        light.intensity = 0.2 + v * 0.8;
+    // const light = scene.getLightByName("light") as HemisphericLight;
+    if (hemiLight) {
+        hemiLight.diffuse = finalColor;
+        hemiLight.intensity = 0.2 + v * 0.8;
     }
 };
 

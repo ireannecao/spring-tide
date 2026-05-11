@@ -63,7 +63,10 @@ void main() {
         if (t < 0.0) continue;
 
         float age = time - t;
-        if (age <= 0.0 || age > maxAge) continue;
+        if (age <= 0.0) continue;
+
+        float lifeT = age / maxAge;
+        float lifeFade = 1.0 - smoothstep(0.6, 1.0, lifeT);
 
         vec3 wavePos = getWavePos(float(i));
         float dist = distance(base.xz, wavePos.xz);
@@ -75,7 +78,7 @@ void main() {
 
         float waveFront = age * waveSpeed;
         float ringWidth = waveSpeed * 2.0;
-        float envelope  = individualAmp * exp(-age * decayRate);
+        float envelope  = individualAmp * exp(-age * decayRate) * lifeFade;
 
         float mask = smoothstep(waveFront - ringWidth, waveFront, dist)
                    * (1.0 - smoothstep(waveFront, waveFront + ringWidth * 0.1, dist));
