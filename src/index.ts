@@ -414,6 +414,8 @@ const penguinManager = new SpriteManager(
     scene
 );
 
+penguinManager.renderingGroupId = 1;
+
 let interactionMode: "penguin" | "wave" = "wave";
 
 const advancedTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
@@ -665,8 +667,8 @@ createSlider("Time of Day", 0, 1, OceanConfig.visuals.skyBrightness, (v) => {
 
 updateEnvironment(OceanConfig.visuals.skyBrightness);
 
-let currentSize = 8.0;
-let currentSubmersion = 1.3;
+let currentSize = 2.0;
+let currentSubmersion = 0.5;
 
 createSlider("Penguin Scale", 2.0, 20.0, 8.0, (v) => {
     const SUBMERSION_RATIO = 0.3; // toggle with these
