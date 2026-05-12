@@ -7,7 +7,8 @@ uniform mat4 worldViewProjection;
 uniform mat4 world;
 uniform float time;
 
-uniform sampler2D displacementMap;
+uniform sampler2D displacementYDx;
+uniform sampler2D displacementDz;
 uniform sampler2D waveTexture;
 const int MAX_WAVES = 32;
 
@@ -34,18 +35,25 @@ varying vec3 vWorldPos;
 varying vec2 vUV;
 
 void main() {
+    vec3 base = position;
     vec3 p = position;
 
     // float fftDisplacement = textureLod(displacementMap, uv, 0.0).r;
     // p.y = fftDisplacement * displacementScale;
 
-    vec4 displacements = textureLod(displacementMap, uv, 0.0);
-    float dy = displacements.r * displacementScale;
-    float dxz = displacements.g * displacementScale * choppiness; // chopiness slider
+    // vec4 displacements = textureLod(displacementMap, uv, 0.0);
+    // out0: RG = Dy (height), BA = Dx (choppiness X)
+    vec4 ydx = textureLod(displacementYDx, uv, 0.0);
+    // out1: RG = Dz (choppiness Z)
+    vec4 dz_sample = textureLod(displacementDz, uv, 0.0);
+    float dy = ydx.r * displacementScale;
+    float dx = ydx.b * choppiness;  // BA channel = Dx real part
+    float dz = dz_sample.r * choppiness; // RG channel = Dz real part
+
+    p.x += dx;
+    p.z += dz;
 
     p.y = dy;
-    p.x += dxz; 
-    p.z += dxz;
 
     float ripple = 0.0;
     for (int i = 0; i < MAX_WAVES; i++) {
@@ -55,10 +63,13 @@ void main() {
         if (t < 0.0) continue;
 
         float age = time - t;
-        if (age <= 0.0 || age > maxAge) continue;
+        if (age <= 0.0) continue;
+
+        float lifeT = age / maxAge;
+        float lifeFade = 1.0 - smoothstep(0.6, 1.0, lifeT);
 
         vec3 wavePos = getWavePos(float(i));
-        float dist = distance(p.xz, wavePos.xz);
+        float dist = distance(base.xz, wavePos.xz);
 
         float maxRadius = maxAge * waveSpeed;
         if (dist > maxRadius) continue;
@@ -67,7 +78,7 @@ void main() {
 
         float waveFront = age * waveSpeed;
         float ringWidth = waveSpeed * 2.0;
-        float envelope  = individualAmp * exp(-age * decayRate);
+        float envelope  = individualAmp * exp(-age * decayRate) * lifeFade;
 
         float mask = smoothstep(waveFront - ringWidth, waveFront, dist)
                    * (1.0 - smoothstep(waveFront, waveFront + ringWidth * 0.1, dist));

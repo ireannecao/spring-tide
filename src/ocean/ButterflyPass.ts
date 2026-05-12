@@ -1,6 +1,7 @@
 import { Scene } from "@babylonjs/core/scene";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { RenderTargetTexture } from "@babylonjs/core/Materials/Textures/renderTargetTexture";
+import { Texture } from "@babylonjs/core";
 import { RawTexture } from "@babylonjs/core/Materials/Textures/rawTexture";
 import { Constants } from "@babylonjs/core/Engines/constants";
 import { Effect } from "@babylonjs/core/Materials/effect";
@@ -37,10 +38,10 @@ function buildButterflyTexture(N: number, scene: Scene): RawTexture {
             let topIdx: number, bottomIdx: number;
             if (stage === 0) {
                 const base = k - (k % span);
-                topIdx    = bitReversed[base + (isTop ? wing : wing - halfSpan)];
+                topIdx = bitReversed[base + (isTop ? wing : wing - halfSpan)];
                 bottomIdx = bitReversed[base + (isTop ? wing + halfSpan : wing)];
             } else {
-                topIdx    = isTop ? k : k - halfSpan;
+                topIdx = isTop ? k : k - halfSpan;
                 bottomIdx = isTop ? k + halfSpan : k;
             }
 
@@ -88,11 +89,11 @@ export class ButterflyPass {
     private _inversionEffect: EffectWrapper;
     private _butterflyLUT: RawTexture;
     private _pingPong: [RenderTargetTexture, RenderTargetTexture];
-    private _hktTexture: RenderTargetTexture;
+    private _hktTexture: Texture;
     private _N: number;
     private _log2N: number;
 
-    constructor(scene: Scene, hktTexture: RenderTargetTexture, N: number, autoRun: boolean = true) {
+    constructor(scene: Scene, hktTexture: Texture, N: number, passName: string, autoRun: boolean = true) {
         this._N = N;
         this._log2N = Math.log2(N);
         this._hktTexture = hktTexture;
@@ -104,17 +105,20 @@ export class ButterflyPass {
 
         this._renderer = new EffectRenderer(engine);
         this._butterflyLUT = buildButterflyTexture(N, scene);
-        this._pingPong = [makeRTT("fft_pp0", N, scene), makeRTT("fft_pp1", N, scene)];
-        this.displacementTexture = makeRTT("fft_displacement", N, scene);
+        this._pingPong = [
+            makeRTT(`${passName}_pp0`, N, scene),
+            makeRTT(`${passName}_pp1`, N, scene)
+        ];
+        this.displacementTexture = makeRTT(`${passName}_displacement`, N, scene);
         this.displacementTexture.updateSamplingMode(Constants.TEXTURE_LINEAR_LINEAR);
 
         // 2. Initialize Effects with Direct Source Injection
         this._butterflyEffect = new EffectWrapper({
             engine,
-            fragmentShader: bSource, 
+            fragmentShader: bSource,
             uniforms: ["stage", "N", "direction", "pingPong"],
             samplerNames: ["butterflyTexture", "pingPong0", "pingPong1"],
-            name: "oceanButterfly",
+            name: `${passName}_butterfly`,
             shaderLanguage: ShaderLanguage.GLSL,
         });
 
@@ -123,14 +127,14 @@ export class ButterflyPass {
             fragmentShader: iSource,
             uniforms: ["N", "scale"],
             samplerNames: ["fftResult"],
-            name: "oceanInversion",
+            name: `${passName}_inversion`,
             shaderLanguage: ShaderLanguage.GLSL,
         });
         const effect = this._inversionEffect.effect;
         scene.onBeforeRenderObservable.addOnce(() => {
-            const vertexSrc = (effect as any)._vertexSourceCode || 
-                            (effect as any)._processedVertexCode ||
-                            (effect as any).vertexSourceCode;
+            const vertexSrc = (effect as any)._vertexSourceCode ||
+                (effect as any)._processedVertexCode ||
+                (effect as any).vertexSourceCode;
             console.log("[Inversion vertex shader]:", vertexSrc?.substring(0, 500));
         });
 
@@ -146,7 +150,7 @@ export class ButterflyPass {
         return new Float32Array(pixels!.buffer);
     }
 
-    private _runFFT(hktTexture: RenderTargetTexture) {
+    private _runFFT(hktTexture: Texture) {
         if (!this._butterflyEffect.effect.isReady() || !this._inversionEffect.effect.isReady()) return;
 
         let readBuf = 0;
