@@ -436,8 +436,9 @@ const createButton = (text: string, mode: "penguin" | "wave") => {
     });
     stackPanel.addControl(btn);
 };
-createButton("Place Penguin", "penguin");
+
 createButton("Create Wave", "wave");
+createButton("Place Penguin", "penguin");
 
 const SPLASH_RATIO = 0.25;
 
